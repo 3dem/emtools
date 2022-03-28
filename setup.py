@@ -45,22 +45,22 @@ with open(path.join(here, 'README.rst'), encoding='utf-8') as f:
 # Fields marked as "Optional" may be commented out.
 
 setup(
-    name='emtable',  # Required
-    version='0.0.9',  # Required
-    description='Simple module to deal with EM tabular data (aka metadata)',  # Required
+    name='emtools',  # Required
+    version='0.0.0',  # Required
+    description='Basic utilities for CryoEM data manipulation',  # Required
     long_description=long_description,  # Optional
-    url='https://github.com/delarosatrevin/emtable',  # Optional
+    url='https://github.com/3dem/emtools',  # Optional
     author='J.M. De la Rosa Trevin, Grigory Sharov',  # Optional
     author_email='delarosatrevin@gmail.com, gsharov@mrc-lmb.cam.ac.uk',  # Optional
     classifiers=[  # Optional
-        'Development Status :: 5 - Production/Stable',
+        'Development Status :: 5 - Production/Alpha',
         'License :: OSI Approved :: GNU General Public License v3 (GPLv3)',
         'Programming Language :: Python :: 3'
     ],
     keywords='electron-microscopy cryo-em structural-biology image-processing',  # Optional
     packages=find_packages(),
     project_urls={  # Optional
-        'Bug Reports': 'https://github.com/delarosatrevin/emtable/issues',
-        'Source': 'https://github.com/delarosatrevin/emtable',
+        'Bug Reports': 'https://github.com/3dem/emtools/issues',
+        'Source': 'https://github.com/3dem/emtools',
     },
 )
