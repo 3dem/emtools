@@ -44,6 +44,25 @@ class Thumbnail:
         self.max_size = kwargs.get('max_size', (512, 512))
         self.contrast_factor = kwargs.get('contrast_factor', None)
         self.scale = 1.0
+        self.output_format = kwargs.get('output_format', None)
+
+
+    def __format(self, pil_img):
+        format = self.output_format
+
+        if format:
+            format_func = getattr(self, '__format_%s' % format, None)
+            if format_func is None:
+                raise Exception('Invalid output format: %s' % format)
+            return format_func(pil_img)
+
+        return pil_img
+
+    def __format_base64(self, pil_img):
+        img_io = io.BytesIO()
+        pil_img.save(img_io, format='PNG')
+
+        return base64.b64encode(img_io.getvalue()).decode("utf-8")
 
     def from_pil(self, pil_img):
         """ Convert a PIL image into Base64. """
@@ -58,10 +77,8 @@ class Thumbnail:
             scale = w1 / w2
 
         self.scale = scale
-        img_io = io.BytesIO()
-        pil_img.save(img_io, format='PNG')
 
-        return base64.b64encode(img_io.getvalue()).decode("utf-8")
+        return self.__format(pil_img)
 
     def from_path(self, path):
         """ Read the image path as a PIL image and encode it as base64.
