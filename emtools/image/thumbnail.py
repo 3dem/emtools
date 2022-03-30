@@ -45,20 +45,21 @@ class Thumbnail:
         self.contrast_factor = kwargs.get('contrast_factor', None)
         self.scale = 1.0
         self.output_format = kwargs.get('output_format', None)
+        self.min_max = kwargs.get('min_max', None)
 
 
     def __format(self, pil_img):
         format = self.output_format
 
         if format:
-            format_func = getattr(self, '__format_%s' % format, None)
+            format_func = getattr(self, '_format_%s' % format, None)
             if format_func is None:
                 raise Exception('Invalid output format: %s' % format)
             return format_func(pil_img)
 
         return pil_img
 
-    def __format_base64(self, pil_img):
+    def _format_base64(self, pil_img):
         img_io = io.BytesIO()
         pil_img.save(img_io, format='PNG')
 
@@ -95,8 +96,12 @@ class Thumbnail:
     def from_array(self, imageArray):
         # imean = imageArray.mean()
         # isd = imageArray.std()
-        iMax = imageArray.max()  # min(imean + 10 * isd, imageArray.max())
-        iMin = imageArray.min()  # max(imean - 10 * isd, imageArray.min())
+        if self.min_max:
+            iMin, iMax = self.min_max
+        else:
+            iMax = imageArray.max()  # min(imean + 10 * isd, imageArray.max())
+            iMin = imageArray.min()  # max(imean - 10 * isd, imageArray.min())
+
         im255 = ((imageArray - iMin) / (iMax - iMin) * 255).astype(np.uint8)
 
         pil_img = Image.fromarray(im255)
