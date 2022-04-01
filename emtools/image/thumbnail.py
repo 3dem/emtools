@@ -29,7 +29,7 @@ import numpy as np
 import base64
 import mrcfile
 
-from PIL import Image, ImageOps
+from PIL import Image, ImageOps, ImageFilter
 
 
 class Thumbnail:
@@ -43,6 +43,7 @@ class Thumbnail:
     def __init__(self, **kwargs):
         self.max_size = kwargs.get('max_size', (512, 512))
         self.contrast_factor = kwargs.get('contrast_factor', None)
+        self.gaussian_radius = kwargs.get('gaussian_radius', None)
         self.scale = 1.0
         self.output_format = kwargs.get('output_format', None)
         self.min_max = kwargs.get('min_max', None)
@@ -67,8 +68,7 @@ class Thumbnail:
 
     def from_pil(self, pil_img):
         """ Convert a PIL image into Base64. """
-        if self.contrast_factor is not None:
-            pil_img = ImageOps.autocontrast(pil_img, cutoff=self.contrast_factor)
+
 
         scale = 1.0
         w1, _ = pil_img.size
@@ -78,6 +78,12 @@ class Thumbnail:
             scale = w1 / w2
 
         self.scale = scale
+
+        if self.contrast_factor is not None:
+            pil_img = ImageOps.autocontrast(pil_img, cutoff=self.contrast_factor)
+
+        if self.gaussian_radius is not None:
+            pil_img = pil_img.filter(ImageFilter.GaussianBlur(radius=self.gaussian_radius))
 
         return self.__format(pil_img)
 
