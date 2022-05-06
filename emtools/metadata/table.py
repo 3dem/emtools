@@ -114,6 +114,27 @@ class ColumnList:
 
         return Row
 
+    @staticmethod
+    def createColumns(colNames, values, guessType=True, types=None):
+        """ Return a list of Columns create from the names.
+        Args:
+            colNames: the string list with column names
+            values: values (can be None) for guessing the column type
+            guessType: if False type will not be guessed even if values is passed
+            types: optional dict with types for some columns
+        """
+        columns = []
+        types = types or {}
+        for i, colName in enumerate(colNames):
+            if colName in types:
+                colType = types[colName]
+            elif guessType and values:
+                colType = _guessType(values[i])
+            else:
+                colType = str
+            columns.append(Column(colName, colType))
+
+        return columns
 
 class Table(ColumnList):
     """
@@ -121,7 +142,7 @@ class Table(ColumnList):
     """
     def __init__(self, columns=None):
         ColumnList.__init__(self, columns)
-        self.Row = None
+        self.Row = self.createRowClass()
         self._rows = []
 
     def clear(self):
@@ -133,7 +154,12 @@ class Table(ColumnList):
         """ Remove all the rows from the table, but keep its columns. """
         self._rows = []
 
-    def addRow(self, *args, **kwargs):
+    def addRow(self, row):
+        """ Add a new Row. """
+        self._rows.append(row)
+
+    def addRowValues(self, *args, **kwargs):
+        """ Append a new Row from the given values. """
         self._rows.append(self.Row(*args, **kwargs))
 
     def size(self):
@@ -175,7 +201,7 @@ class Table(ColumnList):
 
         # Update columns and create new Row class
         self._columns.update(newCols)
-        self._createRowClass()
+        self.Row = self.createRowClass()
 
         # Update rows with new column values
         oldRows = self._rows
@@ -206,7 +232,7 @@ class Table(ColumnList):
         # Remove non desired columns and create again the Row class
         self._columns = OrderedDict([(k, v) for k, v in oldColumns.items()
                                      if k not in rmCols])
-        self._createRowClass()
+        self.Row = self.createRowClass()
 
         # Recreate rows without these column values
         cols = self.getColumnNames()
@@ -268,13 +294,6 @@ class Table(ColumnList):
 
     def __len__(self):
         return self.size()
-
-    def __iterRows(self, line, inputFile):
-        """ Internal method to iter through rows. """
-        typeList = [c.getType() for c in self.getColumns()]
-        while line:
-            yield self.Row(*[t(v) for t, v in zip(typeList, line.split())])
-            line = inputFile.readline().strip()
 
     def __iter__(self):
         return iter(self._rows)

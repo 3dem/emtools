@@ -48,3 +48,7 @@ class MetaData:
                     if l.startswith('data_'):
                         self._tables.append(l.replace('data_', ''))
         return self._tables
+
+
+from .table import Column, ColumnList, Table
+from .starfile import StarReader, StarWriter
