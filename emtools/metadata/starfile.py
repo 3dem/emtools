@@ -139,10 +139,10 @@ class _ColumnsList:
         self.Row = Row
 
 
-class _Reader(_ColumnsList):
-    """ Internal class to handling reading table data. """
+class StarReader:
+    """ Read tables and rows from star files. """
 
-    def __init__(self, inputFile, tableName='', guessType=True, types=None):
+    def __init__(self, inputFile):
         """ Create a new Reader given a filename or file as input.
         Args:
             inputFile: can be either an string (filename) or file object.
@@ -151,14 +151,13 @@ class _Reader(_ColumnsList):
             types: It can be a dictionary {columnName: columnType} pairs that
                 allows to specify types for certain columns.
         """
-        _ColumnsList.__init__(self)
-
         if isinstance(inputFile, str):
             self._file = open(inputFile)
         else:
             self._file = inputFile
 
-        dataStr = 'data_%s' % (tableName or '')
+    def _loadTableInfo(self, tableName):
+        dataStr = 'data_%s' % tableName
         self._findDataLine(self._file, dataStr)
 
         # Find first column line and parse all columns
@@ -181,7 +180,6 @@ class _Reader(_ColumnsList):
         self._createColumns(colNames,
                             values=values, guessType=guessType, types=types)
         self._types = [c.getType() for c in self.getColumns()]
-
 
         if self._singleRow:
             self._row = self.__rowFromValues(values)
@@ -248,7 +246,7 @@ class _Reader(_ColumnsList):
             row = self.getRow()
 
 
-class _Writer:
+class StarWriter:
     """ Write star tables to file. """
     def __init__(self, inputFile):
         self._file = inputFile
