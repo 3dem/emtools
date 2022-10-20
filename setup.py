@@ -34,6 +34,7 @@ from setuptools import setup, find_packages
 # To use a consistent encoding
 from codecs import open
 from os import path
+import emtools
 
 here = path.abspath(path.dirname(__file__))
 
@@ -46,14 +47,14 @@ with open(path.join(here, 'README.rst'), encoding='utf-8') as f:
 
 setup(
     name='emtools',  # Required
-    version='0.0.0',  # Required
+    version=emtools.__version__,  # Required
     description='Basic utilities for CryoEM data manipulation',  # Required
     long_description=long_description,  # Optional
     url='https://github.com/3dem/emtools',  # Optional
     author='J.M. De la Rosa Trevin, Grigory Sharov',  # Optional
     author_email='delarosatrevin@gmail.com, gsharov@mrc-lmb.cam.ac.uk',  # Optional
     classifiers=[  # Optional
-        'Development Status :: 5 - Production/Alpha',
+        'Development Status :: 5 - Alpha',
         'License :: OSI Approved :: GNU General Public License v3 (GPLv3)',
         'Programming Language :: Python :: 3'
     ],
