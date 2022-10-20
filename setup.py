@@ -54,7 +54,7 @@ setup(
     author='J.M. De la Rosa Trevin, Grigory Sharov',  # Optional
     author_email='delarosatrevin@gmail.com, gsharov@mrc-lmb.cam.ac.uk',  # Optional
     classifiers=[  # Optional
-        'Development Status :: 5 - Alpha',
+        'Development Status :: 1 - Planning',
         'License :: OSI Approved :: GNU General Public License v3 (GPLv3)',
         'Programming Language :: Python :: 3'
     ],
