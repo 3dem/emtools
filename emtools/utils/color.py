@@ -22,3 +22,6 @@ class Color:
     @staticmethod
     def warn(msg):
         return f'{WARNING}{msg}{ENDC}'
+    @staticmethod
+    def bold(msg):
+        return f'{BOLD}{msg}{ENDC}'

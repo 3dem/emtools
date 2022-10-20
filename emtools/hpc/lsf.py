@@ -33,6 +33,10 @@ e.g: create folders or the README file
 from emtools.utils import Color, Process
 
 
+def print_args(args):
+    print("\n>>>", Color.bold(' '.join(args)))
+
+
 def usage():
     nodes = {}
     for line in Process('bjobs', '-u', 'all', '-o', 'user exec_host').lines():
@@ -54,7 +58,6 @@ def show_queues(queueName):
         return
 
     nodes = usage()
-
     queues = []
     for line in Process("bqueues").lines():
         if 'QUEUE_NAME' not in line and line.strip():
@@ -63,15 +66,16 @@ def show_queues(queueName):
 
     for q in queues:
         if queueName in q:
-            print()
-            for line in Process("bqueues", "-l", q).lines():
+            args = ["bqueues", "-l", q]
+            print_args(args)
+            for line in Process(*args).lines():
                 if 'HOSTS' in line:
                     parts = line.split()
                     for p in parts[1:]:
                         reserve = p.split('+')[0].replace('/', '')
-                        print()
                         args = ["bhosts", '-o',
                                 'host_name:20 status: max:5 run:5', reserve]
+                        print_args(args)
                         for line2 in Process(*args).lines():
                             if 'HOST_NAME' in line2:
                                 print(line2 + '\tUSERS')

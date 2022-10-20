@@ -14,7 +14,9 @@ class Process:
         for line in self._p.stdout.split('\n'):
             yield line
 
-    def print(self):
-        print(">>> ", *self._args)
-        print(self._p.stdout)
+    def print(self, args=True, stdout=False):
+        if args:
+            print(">>> ", *self._args)
+        if stdout:
+            print(self._p.stdout)
 
