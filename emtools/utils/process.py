@@ -2,7 +2,7 @@ import subprocess
 
 
 class Process:
-    def __int__(self, *args, **kwargs):
+    def __init__(self, *args, **kwargs):
         """ Create a process using subprocess.run. """
         self._args = args
         self._p = subprocess.run(args, capture_output=True, text=True)
