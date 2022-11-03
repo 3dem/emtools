@@ -57,6 +57,7 @@ def get_users(queue=None, user=None):
         users[user].append(entry)
     return users
 
+
 def print_users(users):
     """ Print the list of users. """
     headers = ["USER", "JOBID", "STAT", "QUEUE", "EXEC_HOST"]
@@ -68,6 +69,7 @@ def print_users(users):
         for entry in jobs:
             values = [entry[k] for k in headers]
             print(format.format(*values))
+
 
 def nodes_from_users(usersdict):
     nodes = {}
