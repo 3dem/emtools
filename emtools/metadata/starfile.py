@@ -159,6 +159,9 @@ class StarReader:
             yield row
             row = self.getRow()
 
+    def close(self):
+        self._file.close()
+
 
 class StarWriter:
     """ Write star tables to file. """
