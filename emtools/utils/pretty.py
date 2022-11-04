@@ -1,4 +1,5 @@
 import math
+from datetime import datetime
 
 
 class Pretty:
@@ -17,4 +18,9 @@ class Pretty:
             return '0 bytes'
         if size == 1:
             return '1 byte'
+
+    @staticmethod
+    def timestamp(timestamp, tsformat='%Y-%m-%d %H:%M:%S'):
+        dt = datetime.fromtimestamp(timestamp)
+        return dt.strftime(tsformat)
 
