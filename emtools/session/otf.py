@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 from glob import glob
+import ast
 from pprint import pprint
 
 from emtools.utils import Pretty, Color, Path
@@ -55,7 +56,34 @@ class SessionsOtf(SessionsBase):
         if not os.path.exists(it):
             return None
 
-        stat = os.stat(it)
+        stats = acquisition = {}
+        with open(it) as f:
+            opts = ast.literal_eval(f.read())
+            def _get(k):
+                v = opts[k]
+                if v == 'True':
+                    return True
+                elif v == 'False':
+                    return False
+                else:
+                    return v
+            acquisition = {
+                'voltage': _get('prep__importmovies__kV'),
+                'cs': _get('prep__importmovies__Cs'),
+                'phasePlate': _get('prep__ctffind__do_phaseshift'),
+                'detector': None,
+                'detectorMode': None,
+                'pixelSize': _get('prep__importmovies__angpix'),
+                'dosePerFrame': _get('prep__motioncorr__dose_per_frame'),
+                'totalDose': None,
+                'exposureTime': None,
+                'numOfFrames': None,
+            }
+            stats = {
+                'ptclSizeMin': _get('proc__autopick__log_diam_min'),
+                'ptclSizeMax': _get('proc__autopick__log_diam_max')
+            }
+
         gain = _path('gain.mrc')
         gain_real = os.path.abspath(os.path.realpath(gain))
 
@@ -107,6 +135,10 @@ class SessionsOtf(SessionsBase):
                 reader.close()
                 movies_number = table.size()
 
+        mics = _path('MotionCorr', 'job002', 'corrected_micrographs.star')
+
+        acquisition['numOfFrames'] = movies_number
+
         return {
             'path': folder,
             'gain': gain_real,
@@ -117,7 +149,10 @@ class SessionsOtf(SessionsBase):
             'group': group,
             'data': raw_folder,
             'raw_error': raw_error,
-            'start': Pretty.timestamp(stat.st_mtime),
+            'start': Pretty.modified(it),
+            'end': Pretty.modified(mics),
+            'acquisition': acquisition,
+            'stats': stats
         }
 
     def update_session(self, s):  # Not used now
@@ -130,8 +165,9 @@ class SessionsOtf(SessionsBase):
             return
         sr = SessionsRaw()
         width = max(len(s['path']) for s in sessions) - len(SESSIONS_OTF_FOLDER)
-        format_str = '{start:10} {movies:>7}  {path:<%d}  {user:<15} {data:<}' % width
-        for s in sorted(sessions, key=lambda s: s['start']):
+        format_str = '{range:20} {movies:>7}  {path:<%d}  {user:<15} {data:<}' % width
+        for session in sorted(sessions, key=lambda s: s['start']):
+            s = dict(session)
             s['path'] = os.path.relpath(s['path'], SESSIONS_OTF_FOLDER)
             s['start'] = s['start'].split()[0]
             if s['data'] in sr.sessions:
@@ -140,6 +176,8 @@ class SessionsOtf(SessionsBase):
                 s['data'] = f"{Color.red('Error: ' + s['raw_error'])} -> {s['data']}"
             else:
                 s['data'] = os.path.relpath(s['data'], SESSIONS_RAW_FOLDER)
+            end = s['end'].split()[0] if s['end'] else 'None'
+            s['range'] = '%s - %s' % (s['start'], end)
             print(format_str.format(**s))
 
     def create(self, input_raw_folder, project_name):
@@ -191,6 +229,8 @@ class Main:
     @staticmethod
     def add_arguments(parser):
         group = parser.add_mutually_exclusive_group()
+        group.add_argument('session_path', nargs='?',
+                           help="Optional session path to inspect")
         group.add_argument('--list', '-l', action='store_true',
                            help="List all OTF sessions stored in the cache. ")
         group.add_argument('--discover', '-d', action='store_true',
@@ -213,7 +253,13 @@ class Main:
     def run(args):
         so = SessionsOtf(verbose=args.verbose)
 
-        if args.list:
+        if args.session_path:
+            path = os.path.join(SESSIONS_OTF_FOLDER, args.session_path)
+            s = so.sessions.get(path, {})
+            print("\n>>> Session: ", Color.bold(args.session_path))
+            pprint(s)
+
+        elif args.list:
             so.print_sessions()
 
         elif args.discover or args.update:

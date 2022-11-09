@@ -1,4 +1,5 @@
 import math
+import os
 from datetime import datetime
 
 
@@ -39,4 +40,12 @@ class Pretty:
     def parse_datetime(dt_str, **kwargs):
         f = kwargs.get('format', Pretty.DATETIME_FORMAT)
         return datetime.strptime(dt_str, f)
+
+    @staticmethod
+    def modified(fn, **kwargs):
+        if not os.path.exists(fn):
+            return None
+        f = kwargs.get('format', Pretty.DATETIME_FORMAT)
+        dt = datetime.fromtimestamp(os.stat(fn).st_mtime)
+        return dt if f is None else Pretty.datetime(dt, **kwargs)
 
