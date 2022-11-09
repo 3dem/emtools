@@ -8,36 +8,19 @@ from glob import glob
 from pprint import pprint
 import argparse
 
-from emtools.utils import Pretty, Color
+from emtools.utils import Pretty, Color, Path
 from datetime import datetime
 
 import xmltodict
 from .config import *
+from .base import SessionsBase
 
 
-class SessionsRaw:
-    def __init__(self, pattern=None, cache_folder=None, verbose=False):
-        self.pattern = pattern or SESSIONS_RAW_PATTERN
-        self.cache_folder = cache_folder or SESSIONS_CACHE_FOLDER
-        self.sessions_json_file = os.path.join(self.cache_folder, 'list.json')
-        self.sessions = OrderedDict()
-        self.verbose = verbose
-        self.load()
-
-    def print(self, *args):
-        if self.verbose:
-            print(*args)
-
-    def load(self):
-        """ Load sessions. """
-        self.sessions = OrderedDict()
-        with open(self.sessions_json_file) as f:
-            for s in json.load(f):
-                self.sessions[s['path']] = s
-
-    def save(self):
-        with open(self.sessions_json_file, 'w') as f:
-            json.dump([s for s in self.sessions.values()], f)
+class SessionsRaw(SessionsBase):
+    def __init__(self, **kwargs):
+        self.cache_file = 'raw.json'
+        self.pattern = kwargs.get('pattern', SESSIONS_RAW_PATTERN)
+        SessionsBase.__init__(self, **kwargs)
 
     def get_acquisition(self, fn):
         with open(fn) as f:
@@ -135,7 +118,7 @@ class SessionsRaw:
 
         for folder in folders:
             self.print(Color.warn(f"\n\n>>> Searching in Group folder: {folder}"))
-            parts = os.path.normpath(folder).split(os.path.sep)
+            parts = Path.splitall(folder)
             group_name = [p for p in parts if p.endswith('grp')][0]
 
             for root, dirs, files in os.walk(folder):
@@ -145,12 +128,6 @@ class SessionsRaw:
                         dirs[:] = []
                         break
         return sessions
-
-    def update(self, new_sessions):
-        for s in new_sessions:
-            self.update_session(s)
-            self.sessions[s['path']] = s
-        self.save()
 
     def list(self):
         format_str = u'{start:10} {size:>13}{movies:>7}  {acq}  {path:<}'
@@ -209,36 +186,36 @@ class Main:
 
     @staticmethod
     def run(args):
-        sm = SessionsRaw(verbose=args.verbose)
+        sr = SessionsRaw(verbose=args.verbose)
         if args.list:
-            sm.list()
+            sr.list()
         elif args.session_path:
             path = os.path.join(SESSIONS_RAW_FOLDER, args.session_path)
-            if args.use_raw or path not in sm.sessions:
+            if args.use_raw or path not in sr.sessions:
                 print(Color.bold(">>> Checking path from raw data"))
                 if not os.path.exists(path):
                     raise Exception("Input folder does not exists.")
                 s = {'path': path}
-                sm.update_session(s)
+                sr.update_session(s)
             else:
                 print(Color.bold(">>> Reading session info from cache"))
-                s = sm.sessions[path]
+                s = sr.sessions[path]
             pprint(s)
         else:
-            sessions = sm.find_sessions()
+            sessions = sr.find_sessions()
             print(f'Total sessions from RAW data: {len(sessions)}')
-            print(f'Sessions already parsed: {len(sm.sessions)}')
+            print(f'Sessions already parsed: {len(sr.sessions)}')
 
-            new_sessions = [s for s in sessions if s not in sm.sessions]
+            new_sessions = [s for s in sessions if s not in sr.sessions]
             if new_sessions:
                 print(Color.warn("NEW: "))
                 pprint(new_sessions)
 
-            missing_sessions = [s for s in sm.sessions if s not in sessions]
+            missing_sessions = [s for s in sr.sessions if s not in sessions]
             if missing_sessions:
                 print(Color.bold("Missing: "))
                 pprint(missing_sessions)
 
             if args.update:
-                sm.update([s for k, s in sessions.items() if k not in sm.sessions])
+                sr.update([s for k, s in sessions.items() if k not in sr.sessions])
 

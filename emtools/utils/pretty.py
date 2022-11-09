@@ -3,6 +3,10 @@ from datetime import datetime
 
 
 class Pretty:
+    # Default timestamp
+    DATETIME_FORMAT = '%Y-%m-%d %H:%M:%S'
+    DATE_FORMAT = '%Y-%m-%d'
+
     @staticmethod
     def size(size):
         """ Human friendly file size. """
@@ -20,7 +24,19 @@ class Pretty:
             return '1 byte'
 
     @staticmethod
-    def timestamp(timestamp, tsformat='%Y-%m-%d %H:%M:%S'):
-        dt = datetime.fromtimestamp(timestamp)
-        return dt.strftime(tsformat)
+    def date(dt, **kwargs):
+        return dt.strftime(kwargs.get('format', Pretty.DATE_FORMAT))
+
+    @staticmethod
+    def datetime(dt, **kwargs):
+        return dt.strftime(kwargs.get('format', Pretty.DATETIME_FORMAT))
+
+    @staticmethod
+    def timestamp(timestamp, **kwargs):
+        return Pretty.datetime(datetime.fromtimestamp(timestamp), **kwargs)
+
+    @staticmethod
+    def parse_datetime(dt_str, **kwargs):
+        f = kwargs.get('format', Pretty.DATETIME_FORMAT)
+        return datetime.strptime(dt_str, f)
 

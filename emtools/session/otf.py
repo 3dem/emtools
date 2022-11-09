@@ -1,22 +1,31 @@
 #!/usr/bin/env python
 
 from glob import glob
+from pprint import pprint
 
-from emtools.utils import Pretty, Color
+from emtools.utils import Pretty, Color, Path
 from emtools.metadata import StarReader
+
 from .config import *
+from .base import SessionsBase
+from .raw import SessionsRaw
 
 
-class SessionsOtf:
-    def __init__(self, root=None, verbose=False):
-        self.root = root or SESSIONS_OTF_FOLDER
-        self.verbose = verbose
+class SessionsOtf(SessionsBase):
+    def __init__(self, **kwargs):
+        self.cache_file = 'otf.json'
+        self.root = kwargs.get('root', SESSIONS_OTF_FOLDER)
+        SessionsBase.__init__(self, **kwargs)
 
-    def find_sessions(self):
+    def find_sessions(self, only_new=True):
         sessions = []
         non_sessions = []
         for entry in os.listdir(self.root):
             fn = os.path.join(self.root, entry)
+
+            if fn in self.sessions and only_new:
+                continue
+
             s = self.get_session(fn)
             if s:
                 sessions.append(s)
@@ -32,6 +41,10 @@ class SessionsOtf:
 
         return sessions
 
+    def __find_session_raw(self, session_folder):
+
+        pass
+
     def get_session(self, folder):
         def _path(*paths):
             return os.path.join(folder, *paths)
@@ -46,7 +59,8 @@ class SessionsOtf:
         gain = _path('gain.mrc')
         gain_real = os.path.abspath(os.path.realpath(gain))
 
-        raw_folder = ''
+        user = microscope = group = raw_folder = ''
+        raw_error = ''
         raw_movie = ''
         movies_number = 0
         frames_folder = _path('Frames')
@@ -59,15 +73,30 @@ class SessionsOtf:
                 raw_folder = raw_movie.split('Images-Disc')[0]
                 movies_number = len(movies)
         elif os.path.islink(frames_folder):
-            raw_folder = os.path.dirname(os.path.realpath(frames_folder))
+            raw_folder = os.path.realpath(frames_folder)
         elif os.path.islink(gain):
-            raw_folder = os.path.dirname(gain_real)
+            raw_folder = gain_real
 
         if raw_folder:
             if raw_folder.startswith(SESSIONS_RAW_FOLDER):
                 raw_folder = os.path.relpath(raw_folder, SESSIONS_RAW_FOLDER)
+                parts = Path.splitall(raw_folder)
+                if len(parts) < 7:
+                    raw_error = "Invalid number of subfolders"
+                else:
+                    group = parts[0]
+                    microscope = parts[1]
+                    year = parts[2]
+                    user = parts[5]
+                    if not group.endswith('grp'):
+                        raw_error = "Invalid group %s" % group
+                    elif microscope not in ['Krios01', 'Arctica01']:
+                        raw_error = "Invalid microscope %s" % microscope
+                raw_folder = os.path.join(SESSIONS_RAW_FOLDER, os.path.sep.join(parts[:7]))
             else:
-                raw_folder = f"{Color.red('WRONG')} {raw_folder}"
+                raw_error = "Invalid root for RAW folder"
+        else:
+            raw_error = "Can't guess RAW folder"
 
         if not movies_number:
             # Try to find the number of movies from other source
@@ -79,13 +108,39 @@ class SessionsOtf:
                 movies_number = table.size()
 
         return {
-            'path': os.path.relpath(folder, SESSIONS_OTF_FOLDER),
+            'path': folder,
             'gain': gain_real,
             'exists': os.path.exists(raw_movie),
             'movies': movies_number,
+            'user': user,
+            'microscope': microscope,
+            'group': group,
             'data': raw_folder,
-            'start': Pretty.timestamp(stat.st_mtime)
+            'raw_error': raw_error,
+            'start': Pretty.timestamp(stat.st_mtime),
         }
+
+    def update_session(self, s):  # Not used now
+        pass
+
+    def print_sessions(self, sessions=None):
+        sessions = sessions or self.sessions.values()
+        if not sessions:
+            print("\n>>> No OTF sessions. ")
+            return
+        sr = SessionsRaw()
+        width = max(len(s['path']) for s in sessions) - len(SESSIONS_OTF_FOLDER)
+        format_str = '{start:10} {movies:>7}  {path:<%d}  {user:<15} {data:<}' % width
+        for s in sorted(sessions, key=lambda s: s['start']):
+            s['path'] = os.path.relpath(s['path'], SESSIONS_OTF_FOLDER)
+            s['start'] = s['start'].split()[0]
+            if s['data'] in sr.sessions:
+                s['start'] = Color.bold(s['start'])
+            if s['raw_error']:
+                s['data'] = f"{Color.red('Error: ' + s['raw_error'])} -> {s['data']}"
+            else:
+                s['data'] = os.path.relpath(s['data'], SESSIONS_RAW_FOLDER)
+            print(format_str.format(**s))
 
     def create(self, input_raw_folder, project_name):
         print(f">>> Creating OTF session from: {input_raw_folder}")
@@ -137,32 +192,68 @@ class Main:
     def add_arguments(parser):
         group = parser.add_mutually_exclusive_group()
         group.add_argument('--list', '-l', action='store_true',
-                           help="List all OTF sessions found in "
+                           help="List all OTF sessions stored in the cache. ")
+        group.add_argument('--discover', '-d', action='store_true',
+                           help="Discover new OTF sessions from the "
                                 "the OTF folder. ")
-        group.add_argument('--create', metavar=('INPUT', 'PROJECT_NAME'), nargs=2,
-                           help="Create a new OTF session from the input raw folder. ")
-        group.add_argument('--processing', '-u', action='store_true',
+        group.add_argument('--update', '-u', action='store_true',
                            help="Update the cache with new sessions found"
                                 "in the root folder. ")
+        group.add_argument('--create', metavar=('INPUT', 'PROJECT_NAME'), nargs=2,
+                           help="Create a new OTF session from the input raw folder. ")
+        group.add_argument('--processing', '-p', action='store_true',
+                           help="Update the cache with new sessions found"
+                                "in the root folder. ")
+
+        group.add_argument('--print_users', action='store_true',
+                           help="Print information about the users found"
+                                "in the OTF sessions. ")
 
     @staticmethod
     def run(args):
         so = SessionsOtf(verbose=args.verbose)
 
         if args.list:
-            so.verbose = 0
-            sessions = so.find_sessions()
-            width = max(len(s['path']) for s in sessions)
-            format_str = '{start:10} {movies:>7}  {path:<%d} {data:<}' % width
-            sessions.sort(key=lambda s: s['start'])
-            for s in sessions:
-                s['start'] = s['start'].split()[0]
-                if s['exists']:
-                    s['start'] = Color.bold(s['start'])
-                print(format_str.format(**s))
+            so.print_sessions()
 
-        if args.create:
+        elif args.discover or args.update:
+            sessions = so.find_sessions()
+
+            if args.update:
+                print(">>> Updating cache...")
+                so.update(sessions)
+
+            so.print_sessions(sessions)
+
+        elif args.print_users:
+            users = {}
+            sessions = so.find_sessions()
+
+            for s in sessions:
+                u = s['user']
+
+                if not u:
+                    continue
+
+                if u not in users:
+                    users[u] = {'sessions': 0, 'group': s['group']}
+
+                user = users[u]
+                #user['sessions'] += 1
+
+            user_list = sorted(users.items(), key=lambda item: item[1]['group'])
+            users_map = load_users_map()
+
+            for k, v in user_list:
+                email = users_map[k]['email'] if k in users_map else ''
+                user = k if email else Color.red(k)
+                print(f"{user:<15} {email:<35} {v['group']:<15}")
+
+        elif args.create:
             so.create(*args.create)
+
+        elif args.processing:
+            pass
 
         else:
             so.verbose = 1
