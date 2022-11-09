@@ -80,6 +80,7 @@ class SessionsOtf(SessionsBase):
                 'numOfFrames': None,
             }
             stats = {
+                'numOfMovies': 0,
                 'ptclSizeMin': _get('proc__autopick__log_diam_min'),
                 'ptclSizeMax': _get('proc__autopick__log_diam_max')
             }
@@ -137,7 +138,7 @@ class SessionsOtf(SessionsBase):
 
         mics = _path('MotionCorr', 'job002', 'corrected_micrographs.star')
 
-        acquisition['numOfFrames'] = movies_number
+        stats['numOfMovies'] = movies_number
 
         return {
             'path': folder,
