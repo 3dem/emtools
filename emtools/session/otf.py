@@ -5,7 +5,7 @@ import ast
 from pprint import pprint
 
 from emtools.utils import Pretty, Color, Path
-from emtools.metadata import StarReader
+from emtools.metadata import StarFile
 
 from .config import *
 from .base import SessionsBase
@@ -131,7 +131,7 @@ class SessionsOtf(SessionsBase):
             # Try to find the number of movies from other source
             movies_star = _path('Import', 'job001', 'movies.star')
             if os.path.exists(movies_star):
-                reader = StarReader(movies_star)
+                reader = StarFile(movies_star)
                 table = reader.readTable('movies')
                 reader.close()
                 movies_number = table.size()

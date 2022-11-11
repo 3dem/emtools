@@ -62,7 +62,7 @@ class TestTable(unittest.TestCase):
         """
         print("Reading particles star file...")
         f1 = StringIO(particles_3d_classify)
-        t1 = emd.StarReader(f1).readTable('')
+        t1 = emd.StarFile(f1).readTable('')
         cols = t1.getColumns()
 
         self.assertEqual(len(t1), 16, "Number of rows check failed!")

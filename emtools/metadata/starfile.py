@@ -30,31 +30,39 @@ from collections import OrderedDict, namedtuple
 from .table import ColumnList, Table
 
 
-class StarReader:
-    """ Read tables and rows from star files. """
+class StarFile:
+    """
+    Class to manipulate STAR files.
 
-    def __init__(self, inputFile):
-        """ Create a new Reader given a filename or file as input.
-        Args:
-            inputFile: can be either an string (filename) or file object.
-            tableName: name of the data that will be read.
-            guessType: if True, the columns type is guessed from the first row.
-            types: It can be a dictionary {columnName: columnType} pairs that
-                allows to specify types for certain columns.
-        """
-        if isinstance(inputFile, str):
-            self._file = open(inputFile)
-        else:
-            self._file = inputFile
+    It can be used to read data from STAR file tables or also
+    to write into new files. It also contains some helper methods
+    to queries table's columns or size without parsing all data rows.
 
-    def readTable(self, tableName, guessType=True, types=None):
-        """ Parse a given table from the input star file.
-        Args:
-            tableName: star table name
-            guessType: if True, the columns type is guessed from the first row.
-            types: It can be a dictionary {columnName: columnType} pairs that
-                allows to specify types for certain columns.
+    """
+    def __init__(self, inputFile, mode='r'):
         """
+        Args:
+            inputFile: can be a str with the file path or a file object.
+            mode: mode to open the file, if inputFile is already a file,
+                the mode will be ignored.
+        """
+        self._file = self.__loadFile(inputFile, mode)
+
+    def getTable(self, tableName, **kwargs):
+        """
+        Read the given table from the file and parse columns' definition
+        and data rows.
+        Args:
+            tableName: the name of the table to read, it can be the empty string
+            kwargs:
+                guessType=True, by default types will be guess for data rows.
+                    If False, all values will be returned as strings
+                types=None, optional types dict with {columnName: columnType} pairs that
+                    allows to specify types for certain columns.
+        """
+        guessType = kwargs.get('guessType', False)
+        types = kwargs.get('types', {})
+
         colNames, values = self._loadTableInfo(tableName)
         cols = ColumnList.createColumns(colNames, values,
                                         guessType=guessType, types=types)
@@ -68,6 +76,9 @@ class StarReader:
                 self._table.addRow(self.__rowFromValues(line.split()))
 
         return self._table
+
+    def __loadFile(self, inputFile, mode):
+        return open(inputFile) if isinstance(inputFile, str) else inputFile
 
     def _loadTableInfo(self, tableName):
         dataStr = 'data_%s' % tableName
@@ -100,7 +111,7 @@ class StarReader:
             print("values: ", values)
             raise e
 
-    def getRow(self):
+    def _getRow(self):
         """ Get the next Row, it is None when not more rows. """
         result = self._row
 
@@ -147,20 +158,21 @@ class StarReader:
             self._lineCount += 1
             yield self._line
             self._line = self._file.readline().strip()
+    #
+    # def __iter__(self):
+    #     row = self._getRow()
+    #
+    #     while row is not None:
+    #         yield row
+    #         row = self._getRow()
 
-    def readAll(self):
-        """ Read all rows and return as a list. """
-        return list(iter(self))
-
-    def __iter__(self):
-        row = self.getRow()
-
-        while row is not None:
-            yield row
-            row = self.getRow()
+    def __del__(self):
+        if self._file:
+            self.close()
 
     def close(self):
         self._file.close()
+        self._file = None
 
 
 class StarWriter:

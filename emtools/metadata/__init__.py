@@ -24,31 +24,31 @@
 # *
 # **************************************************************************
 
-
-class MetaData:
-    """ Class to handle multiple Tables datasets, in different formats. """
-
-    def __init__(self, fileName):
-        self._filename = fileName
-        self._tables = None
-
-        if fileName.endswith('.star'):
-            pass
-        else:
-            raise Exception('File type not supported')
-
-    @property
-    def tables(self):
-        """ Return the table names in this metadata. """
-        if self._tables is None:
-            self._tables = []
-            with open(self._filename) as f:
-                for line in f:
-                    l = line.strip()
-                    if l.startswith('data_'):
-                        self._tables.append(l.replace('data_', ''))
-        return self._tables
+#
+# class MetaData:
+#     """ Class to handle multiple Tables datasets, in different formats. """
+#
+#     def __init__(self, fileName):
+#         self._filename = fileName
+#         self._tables = None
+#
+#         if fileName.endswith('.star'):
+#             pass
+#         else:
+#             raise Exception('File type not supported')
+#
+#     @property
+#     def tables(self):
+#         """ Return the table names in this metadata. """
+#         if self._tables is None:
+#             self._tables = []
+#             with open(self._filename) as f:
+#                 for line in f:
+#                     l = line.strip()
+#                     if l.startswith('data_'):
+#                         self._tables.append(l.replace('data_', ''))
+#         return self._tables
 
 
 from .table import Column, ColumnList, Table
-from .starfile import StarReader, StarWriter
+from .starfile import StarFile

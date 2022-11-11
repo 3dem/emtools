@@ -68,8 +68,6 @@ class Thumbnail:
 
     def from_pil(self, pil_img):
         """ Convert a PIL image into Base64. """
-
-
         scale = 1.0
         w1, _ = pil_img.size
         if self.max_size is not None:
