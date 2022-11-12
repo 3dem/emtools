@@ -24,7 +24,9 @@ Usage
 Testing
 -------
 
-``python -m unittest discover emtools``
+Metadata submodule tests:
+
+``python -m unittest emtools.tests.test_metadata``
 
 How to cite
 -----------
