@@ -136,6 +136,7 @@ class ColumnList:
 
         return columns
 
+
 class Table(ColumnList):
     """
     Class to hold and manipulate tabular data for EM processing programs.
@@ -257,6 +258,10 @@ class Table(ColumnList):
         keyFunc = lambda r: getattr(r, key) if isinstance(key, str) else key
         self._rows.sort(key=keyFunc, reverse=reverse)
 
+    def print(self, formatStr=None):
+        for row in self._rows:
+            print(formatStr.format(**row._asdict()))
+
     @staticmethod
     def iterRows(fileName, key=None, reverse=False, **kwargs):
         """
@@ -265,7 +270,7 @@ class Table(ColumnList):
         Args:
             fileName: the input star filename, it might contain the '@'
                 to specify the tableName
-            key: key function to sort elements, it can also be an string that
+            key: key function to sort elements, it can also be a string that
                 will be used to retrieve the value of the column with that name.
             reverse: If true reverse the sort order.
             **kwargs:

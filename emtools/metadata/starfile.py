@@ -26,11 +26,12 @@ import os
 import sys
 import argparse
 from collections import OrderedDict, namedtuple
+from contextlib import AbstractContextManager
 
 from .table import ColumnList, Table
 
 
-class StarFile:
+class StarFile(AbstractContextManager):
     """
     Class to manipulate STAR files.
 
@@ -39,6 +40,11 @@ class StarFile:
     to queries table's columns or size without parsing all data rows.
 
     """
+    @staticmethod
+    def printTable(table, tableName=''):
+        w = StarWriter(sys.stdout)
+        w.writeTable(table, tableName, singleRow=len(table) <= 1)
+
     def __init__(self, inputFile, mode='r'):
         """
         Args:
@@ -48,6 +54,43 @@ class StarFile:
         """
         self._file = self.__loadFile(inputFile, mode)
 
+        # While parsing the file, store the offsets for data_ blocks
+        # for quick access when need to load data rows
+        self._offsets = {}
+        self._names = []  # flag to check if we searched all tables
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
+    def __del__(self):
+        self.close()
+
+    def __contains__(self, item):
+        """ Return if a table name is in the file. """
+        return item in self.getTableNames()
+
+    def getTableNames(self):
+        """ Return all the names of the data_ blocks found in the file. """
+        if not self._names:  # Scan for ALL table names
+            f = self._file  # shortcut notation
+            f.seek(0)  # move file pointer to the beginning
+            offset = 0
+            line = f.readline()
+            while line:
+                # While searching for a data line, we will store the offsets
+                # for any data_ line that we find
+                if line.startswith('data_'):
+                    tn = line.strip().replace('data_', '')
+                    self._offsets[tn] = offset
+                    self._names.append(tn)
+                offset = f.tell()
+                line = f.readline()
+
+            from pprint import pprint
+            pprint(self._offsets)
+
+        return list(self._names)
+
     def getTable(self, tableName, **kwargs):
         """
         Read the given table from the file and parse columns' definition
@@ -55,12 +98,12 @@ class StarFile:
         Args:
             tableName: the name of the table to read, it can be the empty string
             kwargs:
-                guessType=True, by default types will be guess for data rows.
+                guessType=True, by default types will be guessed for data rows.
                     If False, all values will be returned as strings
-                types=None, optional types dict with {columnName: columnType} pairs that
-                    allows to specify types for certain columns.
+                types=None, optional types dict with {columnName: columnType}
+                    pairs that allows to specify types for certain columns.
         """
-        guessType = kwargs.get('guessType', False)
+        guessType = kwargs.get('guessType', True)
         types = kwargs.get('types', {})
 
         colNames, values = self._loadTableInfo(tableName)
@@ -81,8 +124,7 @@ class StarFile:
         return open(inputFile) if isinstance(inputFile, str) else inputFile
 
     def _loadTableInfo(self, tableName):
-        dataStr = 'data_%s' % tableName
-        self._findDataLine(dataStr)
+        self._findDataLine(tableName)
 
         # Find first column line and parse all columns
         self._findLabelLine()
@@ -123,15 +165,31 @@ class StarFile:
 
         return result
 
-    def _findDataLine(self, dataStr):
+    def _findDataLine(self, dataName):
         """ Raise an exception if the desired data string is not found.
         Move the line pointer after the desired line if found.
         """
-        line = self._file.readline()
+        f = self._file  # shortcut notation
+
+        # Check if we know the offset for this data line
+        if dataName in self._offsets:
+            f.seek(self._offsets[dataName])
+            f.readline()
+            return
+
+        dataStr = 'data_%s' % dataName
+        offset = f.tell()
+        line = f.readline()
         while line:
-            if line.startswith(dataStr):
-                return line
-            line = self._file.readline()
+            # While searching for a data line, we will store the offsets
+            # for any data_ line that we find
+            if line.startswith('data_'):
+                ds = line.strip()
+                self._offsets[ds] = offset
+                if ds == dataStr:
+                    return
+            offset = f.tell()
+            line = f.readline()
 
         raise Exception("'%s' block was not found" % dataStr)
 
@@ -166,13 +224,10 @@ class StarFile:
     #         yield row
     #         row = self._getRow()
 
-    def __del__(self):
-        if self._file:
-            self.close()
-
     def close(self):
-        self._file.close()
-        self._file = None
+        if self._file:
+            self._file.close()
+            self._file = None
 
 
 class StarWriter:
@@ -241,19 +296,19 @@ class StarWriter:
             tableName: The name of the table to write.
             singleRow: If True, don't write loop_, just label - value pairs.
         """
-        self.writeTableName(tableName)
+        self._writeTableName(tableName)
 
         if table.size() == 0:
             return
 
         if singleRow:
-            self.writeSingleRow(self._rows[0])
+            self._writeSingleRow(self._rows[0])
         else:
-            self.writeHeader(self._columns.values())
+            self._writeHeader(table.getColumns())
             for row in table:
-                self.writeRow(row)
+                self._writeRow(row)
 
-        self.writeNewline()
+        self._writeNewline()
 
 
 # --------- Helper functions  ------------------------
