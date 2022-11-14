@@ -86,10 +86,16 @@ class StarFile(AbstractContextManager):
                 offset = f.tell()
                 line = f.readline()
 
-            from pprint import pprint
-            pprint(self._offsets)
-
         return list(self._names)
+
+    def __createTable(self, tableName, **kwargs):
+        guessType = kwargs.get('guessType', True)
+        types = kwargs.get('types', {})
+        self._loadTableInfo(tableName)
+        cols = ColumnList.createColumns(self._colNames, self._values,
+                                        guessType=guessType, types=types)
+        self._table = Table(columns=cols)
+        self._types = [c.getType() for c in self._table.getColumns()]
 
     def getTable(self, tableName, **kwargs):
         """
@@ -103,22 +109,43 @@ class StarFile(AbstractContextManager):
                 types=None, optional types dict with {columnName: columnType}
                     pairs that allows to specify types for certain columns.
         """
-        guessType = kwargs.get('guessType', True)
-        types = kwargs.get('types', {})
-
-        colNames, values = self._loadTableInfo(tableName)
-        cols = ColumnList.createColumns(colNames, values,
-                                        guessType=guessType, types=types)
-        self._table = Table(columns=cols)
-        self._types = [c.getType() for c in self._table.getColumns()]
-
+        self.__createTable(tableName, **kwargs)
         if self._singleRow:
-            self._table.addRow(self.__rowFromValues(values))
+            self._table.addRow(self.__rowFromValues(self._values))
         else:
             for line in self._iterRowLines():
                 self._table.addRow(self.__rowFromValues(line.split()))
 
         return self._table
+
+    def getTableSize(self, tableName):
+        """ Return the number of elements in the given table.
+        This method is much more efficient that parsing the table
+        and getting the size, if the size what is important.
+        """
+        self._loadTableInfo(tableName)
+        if self._singleRow:
+            return 1
+        else:
+            return sum(1 for line in self._iterRowLines())
+
+    def getTableInfo(self, tableName, **kwargs):
+        """ Similar to getTable(), but it will not parse the data rows.
+        Only the colums will be read into the Table instance.
+        """
+        self.__createTable(tableName, **kwargs)
+        return self._table
+
+    def iterTable(self, tableName, **kwargs):
+        """ Only iterate over the table's rows and do no create
+        a Table in memory to store all rows.
+        """
+        self.__createTable(tableName, **kwargs)
+        if self._singleRow:
+            yield self.__rowFromValues(self._values)
+        else:
+            for line in self._iterRowLines():
+                yield self.__rowFromValues(line.split())
 
     def __loadFile(self, inputFile, mode):
         return open(inputFile) if isinstance(inputFile, str) else inputFile
@@ -143,7 +170,8 @@ class StarFile(AbstractContextManager):
         if self._foundLoop:
             values = self._line.split() if self._line else []
 
-        return colNames, values
+        self._colNames = colNames
+        self._values = values
 
     def __rowFromValues(self, values):
         try:
@@ -178,17 +206,28 @@ class StarFile(AbstractContextManager):
             return
 
         dataStr = 'data_%s' % dataName
-        offset = f.tell()
+        full_scan = False
+        initial_offset = offset = f.tell()
         line = f.readline()
-        while line:
-            # While searching for a data line, we will store the offsets
-            # for any data_ line that we find
-            if line.startswith('data_'):
-                ds = line.strip()
-                self._offsets[ds] = offset
-                if ds == dataStr:
-                    return
-            offset = f.tell()
+        # Iterate all lines once if necessary, going back to
+        # the beginning of the file once
+        while not full_scan:
+            while line:
+                # While searching for a data line, we will store the offsets
+                # for any data_ line that we find
+                if line.startswith('data_'):
+                    ds = line.strip()
+                    self._offsets[ds] = offset
+                    if ds == dataStr:
+                        return
+                offset = f.tell()
+                if offset == initial_offset:
+                    full_scan = True
+                    break
+                line = f.readline()
+            # Start from the beginning and scann until complete the full loop
+            f.seek(0)
+            offset = 0
             line = f.readline()
 
         raise Exception("'%s' block was not found" % dataStr)
@@ -216,13 +255,6 @@ class StarFile(AbstractContextManager):
             self._lineCount += 1
             yield self._line
             self._line = self._file.readline().strip()
-    #
-    # def __iter__(self):
-    #     row = self._getRow()
-    #
-    #     while row is not None:
-    #         yield row
-    #         row = self._getRow()
 
     def close(self):
         if self._file:

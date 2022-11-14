@@ -23,13 +23,15 @@
 # **************************************************************************
 
 import unittest
+import tempfile
 from io import StringIO  # for Python 3
 
+from emtools.utils import Timer
 from emtools.metadata import StarFile
 from emtools.tests import testpath
 
 
-class TestTable(unittest.TestCase):
+class TestStarFile(unittest.TestCase):
     """
     Our basic test class
     """
@@ -81,6 +83,11 @@ class TestTable(unittest.TestCase):
         }
 
         with StarFile(movieStar) as sf:
+            # Read table in a different order as they appear in file
+            # also before the getTableNames() call that create the offsets
+            t1 = sf.getTable('local_shift')
+            t2 = sf.getTable('general')
+
             self.assertEqual(set(sf.getTableNames()),
                              set(expectedTables.keys()))
 
@@ -88,5 +95,56 @@ class TestTable(unittest.TestCase):
                 colNames = tableInfo.get('columns', {})
                 if colNames:
                     t = sf.getTable(tableName)
-                    self.assertEqual(t.size(), tableInfo['size'])
+                    size = tableInfo['size']
+                    self.assertEqual(t.size(), size)
+                    self.assertEqual(sf.getTableSize(tableName), size)
+                    rows = [r for r in sf.iterTable(tableName)]
+                    for r1, r2 in zip(rows, t):
+                        self.assertEqual(r1, r2)
+                        
+                    self.assertEqual(len(rows), size)
                     self._checkColumns(t, colNames)
+
+    def test_read_particlesStar(self):
+        partStar = testpath('metadata', 'particles_1k.star')
+
+        with StarFile(partStar) as sf:
+            ptable = sf.getTable('particles')
+            self.assertEqual(len(ptable), 1000)
+            otable = sf.getTable('optics')
+            self.assertEqual(len(otable), 1)
+
+        def _enlarge(inputStar, n):
+            """ Enlarge input star file. """
+            lines = []
+            ftmp = tempfile.TemporaryFile('w+')
+            with open(inputStar) as f:
+                for line in f:
+                    ftmp.write(line)
+                    if 'GridSquare' in line:
+                        lines.append(line)
+                for i in range(n):
+                    for line in lines:
+                        ftmp.write(line)
+            ftmp.seek(0)
+            return ftmp
+
+        n = 1000
+        nn = 1000 * (n + 1)
+        part1m = _enlarge(partStar, n)
+
+        with StarFile(part1m) as sf:
+            t = Timer()
+            otable = sf.getTable('optics')
+            t.toc('Read optics:')
+
+            t.tic()
+            ptable = sf.getTable('particles')
+            t.toc(f'Read {len(ptable)} particles:')
+            self.assertEqual(len(ptable), nn)
+
+            t.tic()
+            size = sf.getTableSize('particles')
+            t.toc(f'Counted {size} particles:')
+            self.assertEqual(size, nn)
+
