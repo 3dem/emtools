@@ -25,6 +25,11 @@ class Pretty:
             return '1 byte'
 
     @staticmethod
+    def delta(td):
+        """ Remove the milliseconds of the timedelta. """
+        return str(td).split('.')[0]
+
+    @staticmethod
     def date(dt, **kwargs):
         return dt.strftime(kwargs.get('format', Pretty.DATE_FORMAT))
 
