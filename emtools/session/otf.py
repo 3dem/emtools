@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 from glob import glob
+import configparser
 import ast
 from pprint import pprint
 
@@ -107,23 +108,12 @@ class SessionsOtf(SessionsBase):
             raw_folder = gain_real
 
         if raw_folder:
-            if raw_folder.startswith(SESSIONS_RAW_FOLDER):
-                raw_folder = os.path.relpath(raw_folder, SESSIONS_RAW_FOLDER)
-                parts = Path.splitall(raw_folder)
-                if len(parts) < 7:
-                    raw_error = "Invalid number of subfolders"
-                else:
-                    group = parts[0]
-                    microscope = parts[1]
-                    year = parts[2]
-                    user = parts[5]
-                    if not group.endswith('grp'):
-                        raw_error = "Invalid group %s" % group
-                    elif microscope not in ['Krios01', 'Arctica01']:
-                        raw_error = "Invalid microscope %s" % microscope
-                raw_folder = os.path.join(SESSIONS_RAW_FOLDER, os.path.sep.join(parts[:7]))
-            else:
-                raw_error = "Invalid root for RAW folder"
+            try:
+                sr = SessionsRaw(verbose=0)
+                info = sr.get_info(raw_folder)
+                raw_folder = info['new_raw_folder']
+            except Exception as e:
+                raw_error = str(e)
         else:
             raw_error = "Can't guess RAW folder"
 
@@ -188,42 +178,51 @@ class SessionsOtf(SessionsBase):
         if not os.path.exists(input_raw_folder):
             raise Exception("Input folder does not exists")
 
-        os.system(f"rm -rf {project_name}")
+        raw_session = {'path': input_raw_folder}
+        sr = SessionsRaw(verbose=0)
+        sr.update_session(raw_session)
+        info = sr.get_info(input_raw_folder)
+
+        date_ts = raw_session['first_movie_creation']
+        date_prefix = date_ts.split()[0].replace('-', '')
+        otf_folder = "{date}_{microscope}_{group}_{user}_{project}".format(date=date_prefix,
+                                                                           project=project_name,
+                                                                           **info)
+
+        os.system(f"rm -rf {otf_folder}")
 
         # TODO: Validate project name
         def _path(*paths):
-            return os.path.join(project_name, *paths)
+            return os.path.join(otf_folder, *paths)
 
-        os.mkdir(project_name)
+        os.mkdir(otf_folder)
         os.symlink(input_raw_folder, _path('data'))
 
         gain = glob(_path('data', '*gain*.mrc'))[0]
-        os.symlink(os.path.relpath(gain, project_name), _path('gain.mrc'))
+        os.symlink(os.path.relpath(gain, otf_folder), _path('gain.mrc'))
 
-        relion_it_options = """{
-'prep__ctffind__do_phaseshift' : 'False',
-'proc__ctffind_mics' : 'Schemes/prep/ctffind/micrographs_ctf.star',
-'proc__extract__extract_size' : '416',
-'proc__extract__do_fom_threshold' : 'False',
-'proc__autopick__nr_mpi' : '4',
-'proc__autopick__log_diam_max' : '180.0',
-'proc__autopick__topaz_other_args' : '',
-'proc__autopick__log_diam_min' : '150.0',
-'do_proc' : 'True',
-'proc__select_mics__select_maxval' : '6',
-'proc__extract__do_rescale' : 'True',
-'proc__topaz_model' : '',
-'prep__motioncorr__fn_gain_ref' : 'gain.mrc',
-'prep__motioncorr__fn_gain_ref' : 'gain.mrc', 
-'prep__do_at_most' : '36', 
-'prep__importmovies__angpix' : '0.6485', 
-'prep__importmovies__kV' : '300.0', 
-'prep__importmovies__Cs' : '2.7', 
-'prep__importmovies__fn_in_raw' : 'data/Images-Disc1/GridSquare_*/Data/Foil*fractions.tiff'
-}
-"""
-        with open(_path('relion_it_options.py'), 'w') as f:
-            f.write(relion_it_options)
+
+        # Create a general ini file with config/information of the session
+        acquistion = load_acquisition()
+        mic = acquistion[info['microscope']]
+        config = configparser.ConfigParser()
+
+        config['GENERAL'] = {
+            'group': info['group'],
+            'user': info['user'],
+            'microscope': info['microscope'],
+            'raw_data': input_raw_folder
+        }
+
+        config['ACQUISITION'] = mic
+
+        config['PREPROCESSING'] = {
+            'images': 'data/Images-Disc1/GridSquare_*/Data/Foil*fractions.tiff',
+            'software': 'None',  # or Relion or Scipion
+        }
+
+        with open(_path('README.ini'), 'w') as configfile:
+            config.write(configfile)
 
 
 class Main:

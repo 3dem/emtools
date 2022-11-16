@@ -57,6 +57,35 @@ class SessionsRaw(SessionsBase):
         os.system(f'cp {fn} {self.cache_folder}/xml/{new_fn}')
         return data
 
+    def get_info(self, raw_folder):
+        """ Return some information (group, users, year, scope, etc) from the raw data path. """
+        if not raw_folder.startswith(SESSIONS_RAW_FOLDER):
+            raise Exception("Invalid root for RAW folder")
+
+        raw_folder = os.path.relpath(raw_folder, SESSIONS_RAW_FOLDER)
+        parts = Path.splitall(raw_folder)
+
+        if len(parts) < 7:
+            raise Exception("Invalid number of subfolders")
+
+        group = parts[0]
+        microscope = parts[1]
+        year = parts[2]
+        user = parts[5]
+
+        if not group.endswith('grp'):
+            raise Exception("Invalid group %s" % group)
+        elif microscope not in ['Krios01', 'Arctica01']:
+            raise Exception("Invalid microscope %s" % microscope)
+
+        return {
+            'group': group,
+            'microscope': microscope,
+            'year': year,
+            'user': user,
+            'new_raw_folder': os.path.join(SESSIONS_RAW_FOLDER, os.path.sep.join(parts[:7]))
+        }
+
     def update_session(self, session):
         """ Check for metadata and images under the session's path and update the info.
         """
