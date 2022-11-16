@@ -88,7 +88,6 @@ class SessionsOtf(SessionsBase):
 
         gain = _path('gain.mrc')
         gain_real = os.path.abspath(os.path.realpath(gain))
-
         user = microscope = group = raw_folder = ''
         raw_error = ''
         raw_movie = ''
@@ -185,13 +184,10 @@ class SessionsOtf(SessionsBase):
 
         date_ts = raw_session['first_movie_creation']
         date_prefix = date_ts.split()[0].replace('-', '')
-        otf_folder = "{date}_{microscope}_{group}_{user}_{project}".format(date=date_prefix,
-                                                                           project=project_name,
-                                                                           **info)
-
+        otf_pattern = "{}_{microscope}_{group}_{user}_{}"
+        otf_folder = otf_pattern.format(date_prefix, project_name, **info)
         os.system(f"rm -rf {otf_folder}")
 
-        # TODO: Validate project name
         def _path(*paths):
             return os.path.join(otf_folder, *paths)
 
@@ -201,10 +197,9 @@ class SessionsOtf(SessionsBase):
         gain = glob(_path('data', '*gain*.mrc'))[0]
         os.symlink(os.path.relpath(gain, otf_folder), _path('gain.mrc'))
 
-
         # Create a general ini file with config/information of the session
-        acquistion = load_acquisition()
-        mic = acquistion[info['microscope']]
+        acquisition = load_acquisition()
+        mic = acquisition[info['microscope']]
         config = configparser.ConfigParser()
 
         config['GENERAL'] = {
