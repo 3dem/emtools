@@ -24,9 +24,9 @@
 
 import unittest
 import time
+from pprint import pprint
 
-from emtools.utils import Timer
-from emtools.tests import testpath
+from emtools.utils import Timer, System
 
 
 class TestTimer(unittest.TestCase):
@@ -39,3 +39,8 @@ class TestTimer(unittest.TestCase):
         with Timer('Time in context:') as t2:
             time.sleep(2)
 
+
+class TestSystem(unittest.TestCase):
+    def test_gpus(self):
+        gpus = System.gpus()
+        pprint(gpus)

@@ -96,6 +96,7 @@ def get_queues(queuePattern):
                     queues.append(parts[0])
     return queues
 
+
 def show_queues(queuePattern):
     """ List available nodes to a given queue """
     if not queuePattern:

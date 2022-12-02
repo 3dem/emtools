@@ -67,16 +67,14 @@ class Main:
 
         _print("First", first)
         _print("Last", last)
-
+        n = len(bins)
         delta = dt.fromtimestamp(last[1]['ts']) - dt.fromtimestamp(first[1]['ts'])
         print(f"Total time: {Pretty.delta(delta)}")
-
-        for b in bins:
-            print(b['count'])
+        print(f"      Bins: {[b['count'] for b in bins]}")
+        print(f"       Avg: {sum(b['count']/n for b in bins)}")
 
         def plot():
             import matplotlib.pyplot as plt
-            n = len(bins)
             width = 1
             x = np.arange(width, width * (n + 1), width)
             labels = []
