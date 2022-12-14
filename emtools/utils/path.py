@@ -69,9 +69,11 @@ class Main:
         _print("Last", last)
         n = len(bins)
         delta = dt.fromtimestamp(last[1]['ts']) - dt.fromtimestamp(first[1]['ts'])
+        counts = [b['count'] for b in bins]
+        avg = np.mean(counts[:-1]) if n > 1 else counts[0]
         print(f"Total time: {Pretty.delta(delta)}")
-        print(f"      Bins: {[b['count'] for b in bins]}")
-        print(f"       Avg: {sum(b['count']/n for b in bins)}")
+        print(f"      Bins: {counts}")
+        print(f"       Avg: {avg}")
 
         def plot():
             import matplotlib.pyplot as plt
