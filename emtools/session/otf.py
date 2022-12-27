@@ -1,9 +1,24 @@
-#!/usr/bin/env python
+# **************************************************************************
+# *
+# * Authors:     J.M. de la Rosa Trevin (delarosatrevin@gmail.com)
+# *
+# * This program is free software; you can redistribute it and/or modify
+# * it under the terms of the GNU General Public License as published by
+# * the Free Software Foundation; either version 3 of the License, or
+# * (at your option) any later version.
+# *
+# * This program is distributed in the hope that it will be useful,
+# * but WITHOUT ANY WARRANTY; without even the implied warranty of
+# * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# * GNU General Public License for more details.
+# *
+# **************************************************************************
 
 from glob import glob
 import configparser
 import ast
 from pprint import pprint
+from collections import OrderedDict
 
 from emtools.utils import Pretty, Color, Path
 from emtools.metadata import StarFile
@@ -156,12 +171,24 @@ class SessionsOtf(SessionsBase):
         sr = SessionsRaw()
         width = max(len(s['path']) for s in sessions) - len(SESSIONS_OTF_FOLDER)
         format_str = '{range:20} {movies:>7}  {path:<%d}  {user:<15} {data:<}' % width
+
+        all_sessions = OrderedDict()
+
+        for s in sr.sessions.values():
+            all_sessions[s['path']] = {
+                'raw': s
+            }
+
         for session in sorted(sessions, key=lambda s: s['start']):
             s = dict(session)
             s['path'] = os.path.relpath(s['path'], SESSIONS_OTF_FOLDER)
             s['start'] = s['start'].split()[0]
             if s['data'] in sr.sessions:
                 s['start'] = Color.bold(s['start'])
+                sc = all_sessions[s['data']]
+            else:
+                sc = {}
+            sc['otf'] = session
             if s['raw_error']:
                 s['data'] = f"{Color.red('Error: ' + s['raw_error'])} -> {s['data']}"
             else:
@@ -169,6 +196,14 @@ class SessionsOtf(SessionsBase):
             end = s['end'].split()[0] if s['end'] else 'None'
             s['range'] = '%s - %s' % (s['start'], end)
             print(format_str.format(**s))
+
+        allfn = os.path.join(self.root, 'sessions.json')
+        print(f"Writting all sessions to: {allfn}")
+        session_list = list(all_sessions.values())
+        with open(allfn, 'w') as f:
+            json.dump(session_list, f)
+        print(len(session_list))
+        pprint(session_list[-1])
 
     def create(self, input_raw_folder, project_name):
         print(f">>> Creating OTF session from: {input_raw_folder}")

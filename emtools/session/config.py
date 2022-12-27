@@ -1,6 +1,9 @@
 import os
 import json
 
+# This is a configuration file that should be added to PYTHONPATH
+import sessions_config
+
 SESSIONS_RAW_FOLDER = os.environ.get('SESSIONS_RAW_FOLDER', '')
 SESSIONS_RAW_PATTERN = os.path.join(SESSIONS_RAW_FOLDER,
                                     os.environ.get('SESSIONS_RAW_PATTERN', ''))

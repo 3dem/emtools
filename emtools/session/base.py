@@ -28,13 +28,16 @@ class SessionsBase:
         if self.verbose:
             print(*args)
 
+    def session_key(self, s):
+        return s['path']
+
     def load(self):
         """ Load sessions. """
         self.sessions = OrderedDict()
         if os.path.exists(self.sessions_json_file):
             with open(self.sessions_json_file) as f:
                 for s in json.load(f):
-                    self.sessions[s['path']] = s
+                    self.sessions[self.session_key(s)] = s
 
     def save(self):
         with open(self.sessions_json_file, 'w') as f:
@@ -43,5 +46,5 @@ class SessionsBase:
     def update(self, new_sessions):
         for s in new_sessions:
             self.update_session(s)
-            self.sessions[s['path']] = s
+            self.sessions[self.session_key(s)] = s
         self.save()

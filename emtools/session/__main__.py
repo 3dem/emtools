@@ -2,6 +2,7 @@
 
 from .raw import Main as raw_Main
 from .otf import Main as otf_Main
+from .sessions import Main as sessions_Main
 import argparse
 
 
@@ -10,6 +11,7 @@ subparsers = parser.add_subparsers(
     help='Type of session (raw or otf)',
     dest='command')
 
+sessions_Main.add_arguments(subparsers.add_parser("session"))
 raw_Main.add_arguments(subparsers.add_parser("raw"))
 otf_Main.add_arguments(subparsers.add_parser("otf"))
 
@@ -23,4 +25,5 @@ if cmd == "raw":
 elif cmd == 'otf':
     otf_Main.run(args)
 else:
-    parser.print_help()
+    sessions_Main.run(args)
+    #parser.print_help()

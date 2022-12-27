@@ -42,6 +42,10 @@ class Pretty:
         return Pretty.datetime(datetime.fromtimestamp(timestamp), **kwargs)
 
     @staticmethod
+    def now(**kwargs):
+        return Pretty.datetime(datetime.now(), **kwargs)
+
+    @staticmethod
     def parse_datetime(dt_str, **kwargs):
         f = kwargs.get('format', Pretty.DATETIME_FORMAT)
         return datetime.strptime(dt_str, f)
