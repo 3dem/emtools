@@ -31,7 +31,6 @@ def recv_object(s, verbose=False):
         return None
 
     data = received.decode("utf-8")
-    print(f"data: {data}")
     obj = json.loads(data)
     return obj
 
@@ -63,6 +62,7 @@ class JsonTCPServer(ThreadingTCPServer):
         self._address = address
         self._refresh = 10  # 10 seconds by default
         self._starttime = None
+        self._updatetime = None
         ThreadingTCPServer.__init__(self, address, JsonRequestHandler)
 
     def serve_forever(self, *args, **kwargs):
@@ -76,9 +76,16 @@ class JsonTCPServer(ThreadingTCPServer):
         self._starttime = datetime.now()
         ThreadingTCPServer.serve_forever(self, *args, **kwargs)
 
+    def _check_updates(self):
+        """ Implement this function to check for server updates. """
+        pass
+
     def __update_loop(self):
         while True:
-            print(f"Service actions...{Pretty.now()}")
+            now = datetime.now()
+            print(f"Checking for updates...{Pretty.datetime(now)}")
+            self._check_updates()
+            self._updatetime = now
             time.sleep(self._refresh)
 
     def status(self):
