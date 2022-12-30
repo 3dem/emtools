@@ -17,8 +17,9 @@ from .config import *
 
 class SessionsBase:
     def __init__(self, **kwargs):
-        self.cache_folder = kwargs.get('cache_folder', SESSIONS_CACHE_FOLDER)
-        self.sessions_json_file = os.path.join(self.cache_folder,
+        self.data_folder = kwargs.get('data_folder',
+                                      sessions_config.SESSIONS_DATA_FOLDER)
+        self.sessions_json_file = os.path.join(self.data_folder,
                                                self.cache_file)
         self.verbose = kwargs.get('verbose', 0)
         self.sessions = OrderedDict()

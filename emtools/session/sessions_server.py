@@ -21,47 +21,14 @@ from collections import OrderedDict
 from datetime import datetime
 
 from emtools.utils import Pretty, Process, JsonTCPServer, JsonTCPClient
+from .sessions_data import SessionsData
 import sessions_config as sconfig
-
-
-class SessionsData:
-    def __init__(self, **kwargs):
-        self.data_folder = sconfig.SESSIONS_DATA_FOLDER
-        self.sessions_json_file = os.path.join(self.data_folder,
-                                               'sessions.json')
-        self.verbose = kwargs.get('verbose', 0)
-        self.sessions = OrderedDict()
-        self.load()
-
-    def print(self, *args):
-        if self.verbose:
-            print(*args)
-
-    def session_key(self, s):
-        return s['name']
-
-    def load(self):
-        """ Load sessions. """
-        self.sessions = OrderedDict()
-        if os.path.exists(self.sessions_json_file):
-            with open(self.sessions_json_file) as f:
-                for s in json.load(f):
-                    self.sessions[self.session_key(s)] = s
-
-    def save(self):
-        with open(self.sessions_json_file, 'w') as f:
-            json.dump([s for s in self.sessions.values()], f)
-
-    def update(self, new_sessions):
-        for s in new_sessions:
-            self.update_session(s)
-            self.sessions[self.session_key(s)] = s
-        self.save()
 
 
 class SessionsServer(JsonTCPServer):
     def __init__(self, address):
         JsonTCPServer.__init__(self, address)
+        self._refresh = 30
         self.data = SessionsData()
         self._files = {}
 
@@ -73,10 +40,10 @@ class SessionsServer(JsonTCPServer):
             if k.startswith('SESSIONS_'):
                 config[k] = getattr(sconfig, k)
         config['folders'] = {
-            k: f"{v[0]} -> {v[1]}" for k, v in self._get_folders().items()
+            k: f"{v[0]} -> {v[1]}" for k, v in self.data.get_folders().items()
         }
         s['config'] = config
-        s['active_sessions'] = [s['name'] for s in self._active_sessions()]
+        s['active_sessions'] = [s['name'] for s in self.data.active_sessions()]
         return s
 
     def list(self, session=''):
@@ -97,100 +64,16 @@ class SessionsServer(JsonTCPServer):
         else:
             return {'errors': [f'Session {session_key} does not exists.']}
 
-    def _active_sessions(self):
-        return iter(s for s in self.data.sessions.values()
-                    if s.get('status', 'finished') == 'active')
-
     def _check_updates(self):
         """ Implement this function to check for server updates. """
         print('Updates from Sessions.....')
-        for s in self._active_sessions():
-            print(f"   Active session: {s['name']}, checking files")
-            for root, dirs, files in os.walk(s['raw']['path']):
-                for f in files:
-                    fn = os.path.join(root, f)
-                    if fn not in self._files[s['name']]
-                    s = os.stat(fn)
-                    fn = os.path.join(root, f)
-                    ext = os.path.splitext(f)[1]
-                    if ext not in stats:
-                        stats[ext] = {'count': 0, 'size': 0}
-                    s = stats[ext]
-                    s['count'] += 1
-                    s['size'] += os.stat(fn).st_size
-    def _get_folders(self):
-        folders = OrderedDict()
-        for f in ['EPU', 'Offload', 'OTF', 'Groups']:
-            folder = os.path.join(sconfig.SESSIONS_DATA_FOLDER, 'links', f)
-            fpath = os.path.abspath(os.path.realpath(folder))
-            folders[f] = (folder, fpath)
-        return folders
+        self.data.update_active_sessions()
 
     def create_session(self, microscope, group, user, label):
-        errors = []
-        dirs = []
-        result = {}
-        sessions = self.data.sessions
-        try:
-            ds = Pretty.date(datetime.now(), format='%Y%m%d')
-            pattern = sconfig.SESSIONS_NAME_PATTERN.replace('YYYYMMDD', ds)
-            session_name = pattern.format(**locals())
-
-            if session_name in self.data.sessions:
-                raise Exception(f'Session {session_name} already exists')
-
-            for k, v in self._get_folders().items():
-                folder = v[1]
-                session_path = os.path.join(folder, session_name)
-                if os.path.exists(session_path):
-                    errors.append(f"Session folder {session_path} already exists.")
-                dirs.append(session_path)
-
-            if not errors:
-                for d in dirs:
-                    os.mkdir(d)
-            session = {
-                'name': session_name,
-                'creation': Pretty.now(),
-                'status': 'active',
-                'raw': {
-                    'path': dirs[0],
-                    'status': 'active',  # finished
-                },
-                'offload': {
-                    'path': dirs[1],
-                    'status': 'receiving'  # finished, delivered, deleted
-                },
-                'otf': {
-                    'path': dirs[2],
-                },
-                'delivery': {'path': dirs[3]},
-            }
-            self.data.sessions[session_name] = session
-            self.data.save()
-        except Exception as e:
-            errors.append(f"Exception: {str(e)}")
-
-        return {'errors': errors} if errors else {'session': session}
+        return self.data.create_session(microscope, group, user, label)
 
     def delete_session(self, session_name):
-        errors = []
-        sessions = self.data.sessions
-        try:
-            if session_name not in self.data.sessions:
-                raise Exception(f'Session {session_name} does not exists')
-
-            for k, v in self._get_folders().items():
-                folder = v[1]
-                session_path = os.path.join(folder, session_name)
-                Process.system(f'rm -rf {session_path}')
-
-            del self.data.sessions[session_name]
-            self.data.save()
-        except Exception as e:
-            errors.append(f"Exception: {str(e)}")
-
-        return {'errors': errors} if errors else {'deleted': session_name}
+        return self.data.delete_session(session_name)
 
 
 class SessionsClient(JsonTCPClient):

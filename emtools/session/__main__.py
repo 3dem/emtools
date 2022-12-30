@@ -2,7 +2,7 @@
 
 from .raw import Main as raw_Main
 from .otf import Main as otf_Main
-from .sessions import Main as sessions_Main
+from .sessions_server import Main as sessions_Main
 import argparse
 
 
