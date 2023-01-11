@@ -1,6 +1,6 @@
 # **************************************************************************
 # *
-# * Authors:  J. M. de la Rosa Trevin (delarosatrevin@gmail.com)
+# * Authors:     J.M. de la Rosa Trevin (delarosatrevin@gmail.com)
 # *
 # * This program is free software; you can redistribute it and/or modify
 # * it under the terms of the GNU General Public License as published by
@@ -12,28 +12,20 @@
 # * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # * GNU General Public License for more details.
 # *
-# * You should have received a copy of the GNU General Public License
-# * along with this program; if not, write to the Free Software
-# * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
-# * 02111-1307  USA
-# *
-# *  All comments concerning this program package may be sent to the
-# *  e-mail address 'delarosatrevin@gmail.com'
-# *
 # **************************************************************************
-
+import os
 import unittest
 import tempfile
-from io import StringIO  # for Python 3
+from pprint import pprint
 
-from emtools.utils import Timer
-from emtools.metadata import StarFile
+from emtools.utils import Timer, Color
+from emtools.metadata import StarFile, EPU
 from emtools.tests import testpath
 
 
 class TestStarFile(unittest.TestCase):
     """
-    Our basic test class
+    Tests for StarFile class.
     """
 
     def _checkColumns(self, table, columnNames):
@@ -148,3 +140,25 @@ class TestStarFile(unittest.TestCase):
             t.toc(f'Counted {size} particles:')
             self.assertEqual(size, nn)
 
+
+class TestEPU(unittest.TestCase):
+    """ Tests for EPU class. """
+
+    def test_read_acquisition(self):
+        fn = 'FoilHole_5850127_Data_5798426_5798428_20221104_061329.xml'
+        xml = testpath('metadata', fn)
+
+        acq = EPU.get_acquisition(xml)
+        self.assertTrue(all(k in acq for k in ['camera', 'instrument',
+                                               'magnification', 'pixelSize', 'voltage']))
+        self.assertEqual(acq['instrument']['id'], '3788')
+
+    def test_read_session_info(self):
+        sessionPath = os.environ.get('EPU_TEST_SESSION', '')
+        if not sessionPath or not os.path.exists(sessionPath):
+            print(f"Please define {Color.warn('EPU_TEST_SESSION')} pointing to "
+                  f"an existing data folder and run the test again.")
+        else:
+            print(f">>> Getting session info from: {Color.bold(sessionPath)}")
+            session = EPU.get_session_info(sessionPath)
+            pprint(session)
