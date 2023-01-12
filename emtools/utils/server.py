@@ -24,6 +24,7 @@ from socketserver import BaseRequestHandler, ThreadingTCPServer
 from datetime import datetime
 
 from .pretty import Pretty
+from .color import Color
 
 
 def send_object(s, obj):
@@ -76,33 +77,8 @@ class JsonRequestHandler(BaseRequestHandler):
 class JsonTCPServer(ThreadingTCPServer):
     def __init__(self, address):
         self._address = address
-        self._refresh = 10  # 10 seconds by default
-        self._starttime = None
-        self._updatetime = None
-        ThreadingTCPServer.__init__(self, address, JsonRequestHandler)
-
-    def serve_forever(self, *args, **kwargs):
-        print(f"Running server\n\taddress: {self._address}"
-              f"\n\trefresh: {self._refresh} seconds")
-        # Start a thread with the server -- that thread will then start one
-        # more thread for each request
-        update_thread = threading.Thread(target=self.__update_loop)
-        update_thread.daemon = True
-        update_thread.start()
         self._starttime = datetime.now()
-        ThreadingTCPServer.serve_forever(self, *args, **kwargs)
-
-    def _check_updates(self):
-        """ Implement this function to check for server updates. """
-        pass
-
-    def __update_loop(self):
-        while True:
-            now = datetime.now()
-            print(f"Checking for updates...{Pretty.datetime(now)}")
-            self._check_updates()
-            self._updatetime = now
-            time.sleep(self._refresh)
+        ThreadingTCPServer.__init__(self, address, JsonRequestHandler)
 
     def status(self):
         return {
@@ -110,10 +86,6 @@ class JsonTCPServer(ThreadingTCPServer):
             'start_time': Pretty.datetime(self._starttime),
             'uptime': Pretty.delta(datetime.now() - self._starttime)
         }
-
-    def set_refresh(self, seconds):
-        self._refresh = seconds
-        print(f"Setting refresh to {seconds} seconds.")
 
 
 class JsonTCPClient:
