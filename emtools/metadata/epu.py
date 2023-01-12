@@ -19,7 +19,7 @@ from datetime import datetime
 from glob import glob
 import xmltodict
 
-from emtools.utils import Pretty
+from emtools.utils import Pretty, Path
 
 
 class EPU:
@@ -63,49 +63,39 @@ class EPU:
         """ Check for metadata and images under the session's path and return
         updated info.
         """
-        images_pattern = 'Images-Disc*/GridSquare_*/Data/FoilHole_*_fractions.tiff'
-        files = glob(os.path.join(sessionPath, images_pattern))
+        movies_count = size = 0
+        first = last = xml = None
+        acq = {}
+        ed = Path.ExtDict()
 
-        if not files:
-            return
-
-        def _xml(t):
-            xmlfn = t[0].replace('_fractions.tiff', '.xml')
-            return xmlfn if os.path.exists(xmlfn) else None
-
-        f0 = files[0]
-        s0 = os.stat(f0)
-        size = s0.st_size
-        first = (f0, s0.st_mtime)
-        last = (f0, s0.st_mtime)
-        xml = _xml(first)
-
-        for f in files[1:]:
-            s = os.stat(f)
-            size += s.st_size
-            t = (f, s.st_mtime)
-            if s.st_mtime < first[1]:
-                first = t
-            if s.st_mtime > last[1]:
-                last = t
-            if not xml:
-                xml = _xml(t)
+        for root, dirs, files in os.walk(sessionPath):
+            for fn in files:
+                f = os.path.join(root, fn)
+                s = os.stat(f)
+                ed.register(f, s)
+                size += s.st_size
+                t = (f, s.st_mtime)
+                if fn.startswith('FoilHole_') and fn.endswith('_fractions.tiff'):
+                    movies_count += 1
+                    first = t if not first or s.st_mtime < first[1] else first
+                    last = t if not last or s.st_mtime > last[1] else last
+                    if not acq:
+                        xmlFn = f.replace('_fractions.tiff', '.xml')
+                        if os.path.exists(xmlFn):
+                            acq = EPU.get_acquisition(xmlFn)
 
         first_creation = datetime.fromtimestamp(first[1])
         last_creation = datetime.fromtimestamp(last[1])
         hours = (last_creation - first_creation).seconds / 3600
-        session = {
+        return {
             'size': size,
-            'movies': len(files),
+            'movies': movies_count,
             'sizeH': Pretty.size(size),
             'first_movie': os.path.relpath(first[0], sessionPath),
             'first_movie_creation': Pretty.timestamp(first[1]),
             'last_movie': os.path.relpath(last[0], sessionPath),
             'last_movie_creation': Pretty.timestamp(last[1]),
-            'duration': f'{hours:0.2f} hours'
+            'duration': f'{hours:0.2f} hours',
+            'acquisition': acq,
+            'files': ed
         }
-
-        if xml:
-            session['acquisition'] = EPU.get_acquisition(xml)
-
-        return session
