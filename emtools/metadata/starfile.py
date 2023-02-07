@@ -257,7 +257,7 @@ class StarFile(AbstractContextManager):
             self._line = self._file.readline().strip()
 
     def close(self):
-        if self._file:
+        if getattr(self, '_file', None):
             self._file.close()
             self._file = None
 
