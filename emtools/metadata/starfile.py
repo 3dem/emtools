@@ -272,14 +272,16 @@ class StarWriter:
     def _writeTableName(self, tableName):
         self._file.write("\ndata_%s\n\n" % (tableName or ''))
 
-    def _writeSingleRow(self, row):
+    def writeSingleRow(self, tableName, row):
+        self._writeTableName(tableName)
         m = max([len(c) for c in row._fields]) + 5
         format = "_{:<%d} {:>10}\n" % m
         for col, value in row._asdict().items():
             self._file.write(format.format(col, value))
         self._file.write('\n\n')
 
-    def _writeHeader(self, columns):
+    def writeHeader(self, tableName, columns):
+        self._writeTableName(tableName)
         self._file.write("loop_\n")
         self._columns = columns
         # Write column names
@@ -294,7 +296,7 @@ class StarWriter:
             self._computeLineFormat([values])
         self._file.write(self._format.format(*values))
 
-    def _writeRow(self, row):
+    def writeRow(self, row):
         """ Write to file the line for this row.
         Row should be an instance of the expected Row class.
         """
@@ -328,23 +330,21 @@ class StarWriter:
             tableName: The name of the table to write.
             singleRow: If True, don't write loop_, just label - value pairs.
         """
-        self._writeTableName(tableName)
+        if table.size():
+            if singleRow:
+                self.writeSingleRow(tableName, table[0])
+            else:
+                self.writeHeader(tableName, table.getColumns())
+                for row in table:
+                    self.writeRow(row)
 
-        if table.size() == 0:
-            return
-
-        if singleRow:
-            self._writeSingleRow(self._rows[0])
+            self._writeNewline()
         else:
-            self._writeHeader(table.getColumns())
-            for row in table:
-                self._writeRow(row)
-
-        self._writeNewline()
+            # Only write the table name
+            self._writeTableName(tableName)
 
 
 # --------- Helper functions  ------------------------
-
 def _guessType(strValue):
     try:
         int(strValue)
