@@ -42,7 +42,7 @@ class StarFile(AbstractContextManager):
     """
     @staticmethod
     def printTable(table, tableName=''):
-        w = StarWriter(sys.stdout)
+        w = StarFile(sys.stdout)
         w.writeTable(table, tableName, singleRow=len(table) <= 1)
 
     def __init__(self, inputFile, mode='r'):
@@ -58,6 +58,10 @@ class StarFile(AbstractContextManager):
         # for quick access when need to load data rows
         self._offsets = {}
         self._names = []  # flag to check if we searched all tables
+
+        # Used for writing
+        self._format = None
+        self._columns = None
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
@@ -140,15 +144,23 @@ class StarFile(AbstractContextManager):
         """ Only iterate over the table's rows and do no create
         a Table in memory to store all rows.
         """
+        start = kwargs.get('start', 1) - 1
+        limit = kwargs.get('limit', 0)
+
         self.__createTable(tableName, **kwargs)
         if self._singleRow:
             yield self.__rowFromValues(self._values)
         else:
-            for line in self._iterRowLines():
-                yield self.__rowFromValues(line.split())
+            c = 0
+            for i, line in enumerate(self._iterRowLines()):
+                if i >= start:
+                    c += 1
+                    yield self.__rowFromValues(line.split())
+                if limit and c == limit:
+                    break
 
     def __loadFile(self, inputFile, mode):
-        return open(inputFile) if isinstance(inputFile, str) else inputFile
+        return open(inputFile, mode) if isinstance(inputFile, str) else inputFile
 
     def _loadTableInfo(self, tableName):
         self._findDataLine(tableName)
@@ -200,12 +212,12 @@ class StarFile(AbstractContextManager):
         f = self._file  # shortcut notation
 
         # Check if we know the offset for this data line
-        if dataName in self._offsets:
-            f.seek(self._offsets[dataName])
+        dataStr = 'data_' + dataName
+        if dataStr in self._offsets:
+            f.seek(self._offsets[dataStr])
             f.readline()
             return
 
-        dataStr = 'data_%s' % dataName
         full_scan = False
         initial_offset = offset = f.tell()
         line = f.readline()
@@ -261,14 +273,7 @@ class StarFile(AbstractContextManager):
             self._file.close()
             self._file = None
 
-
-class StarWriter:
-    """ Write star tables to file. """
-    def __init__(self, inputFile):
-        self._file = inputFile
-        self._format = None
-        self._columns = None
-
+    # ---------------------- Writer functions --------------------------------
     def _writeTableName(self, tableName):
         self._file.write("\ndata_%s\n\n" % (tableName or ''))
 
