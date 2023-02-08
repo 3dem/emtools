@@ -83,6 +83,20 @@ class Path:
         return transf == 0
 
     @staticmethod
+    def lastModified(folder):
+        """ Return the last modified file and modified time. """
+        files = os.listdir(folder)
+        last = None
+
+        for fn in files:
+            f = os.path.join(folder, fn)
+            s = os.stat(f)
+            t = (f, s.st_mtime)
+            last = t if not last or s.st_mtime > last[1] else last
+
+        return last[0], dt.fromtimestamp(last[1])
+
+    @staticmethod
     def copyFile(file1, file2, sleep=0):
         """ Copy two files controlling with some possible delay. """
         bufsize = 8 * 1024 * 1024
