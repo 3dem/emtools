@@ -43,7 +43,7 @@ class StarFile(AbstractContextManager):
     @staticmethod
     def printTable(table, tableName=''):
         w = StarFile(sys.stdout)
-        w.writeTable(table, tableName, singleRow=len(table) <= 1)
+        w.writeTable(tableName, table, singleRow=len(table) <= 1)
 
     def __init__(self, inputFile, mode='r'):
         """
@@ -328,7 +328,7 @@ class StarFile(AbstractContextManager):
         self._format = " ".join("{:>%d%s} " % (w + 1, f)
                                 for w, f in zip(widths, formats)) + '\n'
 
-    def writeTable(self, table, tableName, singleRow=False):
+    def writeTable(self, tableName, table, singleRow=False):
         """ Write a Table in Star format to the given file.
         Args:
             table: Table that is going to be written
