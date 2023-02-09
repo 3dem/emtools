@@ -286,6 +286,7 @@ class StarFile(AbstractContextManager):
         self._file.write('\n\n')
 
     def writeHeader(self, tableName, columns):
+        self._format = None  # clear format for writing new table
         self._writeTableName(tableName)
         self._file.write("loop_\n")
         self._columns = columns
@@ -331,8 +332,8 @@ class StarFile(AbstractContextManager):
     def writeTable(self, tableName, table, singleRow=False):
         """ Write a Table in Star format to the given file.
         Args:
-            table: Table that is going to be written
             tableName: The name of the table to write.
+            table: Table that is going to be written
             singleRow: If True, don't write loop_, just label - value pairs.
         """
         if table.size():
