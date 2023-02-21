@@ -15,6 +15,7 @@
 # **************************************************************************
 
 import os
+import psutil
 import subprocess
 
 
@@ -40,8 +41,28 @@ class Process:
             print(self.stdout)
 
     @staticmethod
-    def system(cmd):
+    def system(cmd, only_print=False):
         print(cmd)
-        os.system(cmd)
+        if not only_print:
+            os.system(cmd)
+
+    @staticmethod
+    def kill(pid, children=True):
+        """ Kill the process with given pid and all children processes
+        if children=True.
+
+        :param pid: the process id to terminate
+        """
+        proc = psutil.Process(pid)
+        if children:
+            for c in proc.children(recursive=True):
+                if c.pid is not None:
+                    print("Terminating child pid: %d" % c.pid)
+                    c.kill()
+        print("Terminating process pid: %s" % pid)
+        if pid is None:
+            print("Got None PID!!!")
+        else:
+            proc.kill()
 
 

@@ -136,6 +136,30 @@ class Path:
                 _copy(os.path.join(root, f), os.path.join(root2, f), **kwargs)
 
 
+    @staticmethod
+    def replaceExt(filename, newExt):
+        """ Replace the current path extension(from last .)
+        with a new one. The new one should not contains the ."""
+        return Path.removeExt(filename) + '.' + newExt
+
+    @staticmethod
+    def replaceBaseExt(filename, newExt):
+        """ Replace the current basename extension(from last .)
+        with a new one. The new one should not contains the .
+        """
+        return Path.replaceExt(os.path.basename(filename), newExt)
+
+    @staticmethod
+    def removeBaseExt(filename):
+        """Take the basename of the filename and remove extension"""
+        return Path.removeExt(os.path.basename(filename))
+
+    @staticmethod
+    def removeExt(filename):
+        """ Remove extension from basename """
+        return os.path.splitext(filename)[0]
+
+
 class Main:
     @staticmethod
     def add_arguments(parser):
