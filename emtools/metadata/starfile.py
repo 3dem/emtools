@@ -285,13 +285,13 @@ class StarFile(AbstractContextManager):
             self._file.write(format.format(col, value))
         self._file.write('\n\n')
 
-    def writeHeader(self, tableName, columns):
+    def writeHeader(self, tableName, table):
         self._format = None  # clear format for writing new table
         self._writeTableName(tableName)
         self._file.write("loop_\n")
-        self._columns = columns
+        self._columns = table.getColumns()
         # Write column names
-        for col in columns:
+        for col in self._columns:
             self._file.write("_%s \n" % col.getName())
 
     def _writeRowValues(self, values):
@@ -340,7 +340,7 @@ class StarFile(AbstractContextManager):
             if singleRow:
                 self.writeSingleRow(tableName, table[0])
             else:
-                self.writeHeader(tableName, table.getColumns())
+                self.writeHeader(tableName, table)
                 for row in table:
                     self.writeRow(row)
 
