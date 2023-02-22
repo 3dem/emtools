@@ -18,6 +18,8 @@ import os
 import psutil
 import subprocess
 
+from .color import Color
+
 
 class Process:
     def __init__(self, *args, **kwargs):
@@ -47,22 +49,36 @@ class Process:
             os.system(cmd)
 
     @staticmethod
-    def kill(pid, children=True):
-        """ Kill the process with given pid and all children processes
-        if children=True.
-
-        :param pid: the process id to terminate
+    def ps(program, folder=None, kill=False):
+        """ Inspect processes matching a given program name.
+        Args:
+            program: string matching the program name
+            folder: if not None, filter processes only with that folder as
+                working directory (cwd)
+            kill: if true, all processes found will be killed.
         """
-        proc = psutil.Process(pid)
-        if children:
-            for c in proc.children(recursive=True):
-                if c.pid is not None:
-                    print("Terminating child pid: %d" % c.pid)
-                    c.kill()
-        print("Terminating process pid: %s" % pid)
-        if pid is None:
-            print("Got None PID!!!")
-        else:
-            proc.kill()
+        processes = {}  # store processes grouped by cwd
+
+        for proc in psutil.process_iter(['pid', 'name', 'cwd', 'username']):
+            if program in proc.info['name']:
+                folder = proc.info['cwd']
+                if folder not in processes:
+                    processes[folder] = []
+                processes[folder].append(proc)
+
+        color = Color.red if kill else Color.bold
+
+        for folder, procs in processes.items():
+            if not folder or folder == folder:
+                print(f"{Color.warn(folder)}")
+                prefix = 'Killing' if kill else ''
+                for p in procs:
+                    print(f"   {p.info['username']} - {prefix} {color(p.info['name']):<30} {p.cmdline()}")
+                    if kill:
+                        try:
+                            p.kill()
+                        except:
+                            pass
+
 
 

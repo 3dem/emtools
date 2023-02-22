@@ -140,22 +140,28 @@ class EPU:
                             })
 
         _get_movies()
-        movies.sort(key=lambda m: m['stat'].st_mtime)
-        first_ts = movies[0]['stat'].st_mtime
-        first_creation = datetime.fromtimestamp(first_ts)
-        last_ts = movies[-1]['stat'].st_mtime
-        last_creation = datetime.fromtimestamp(last_ts)
-        last_movie = os.path.relpath(movies[-1]['fn'], inputDir)
+        if movies:
+            movies.sort(key=lambda m: m['stat'].st_mtime)
+            first_ts = movies[0]['stat'].st_mtime
+            first_creation = datetime.fromtimestamp(first_ts)
+            first_movie = os.path.relpath(movies[0]['fn'], inputDir)
+            last_ts = movies[-1]['stat'].st_mtime
+            last_creation = datetime.fromtimestamp(last_ts)
+            last_movie = os.path.relpath(movies[-1]['fn'], inputDir)
+            hours = (last_creation - first_creation).seconds / 3600
+        else:
+            first_movie = last_movie = ''
+            first_ts = last_ts = None
+            hours = 0
 
-        hours = (last_creation - first_creation).seconds / 3600
         info = {
             'size': ed.total_size,
             'movies': len(movies),
             'sizeH': Pretty.size(ed.total_size),
-            'first_movie': os.path.relpath(movies[0]['fn'], inputDir),
-            'first_movie_creation': Pretty.timestamp(first_ts),
+            'first_movie': first_movie,
+            'first_movie_creation': Pretty.timestamp(first_ts) if first_ts else '',
             'last_movie': last_movie,
-            'last_movie_creation': Pretty.timestamp(last_ts),
+            'last_movie_creation': Pretty.timestamp(last_ts) if last_ts else '',
             'duration': f'{hours:0.2f} hours',
             'files': ed
         }
