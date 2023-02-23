@@ -49,36 +49,25 @@ class Process:
             os.system(cmd)
 
     @staticmethod
-    def ps(program, folder=None, kill=False):
+    def ps(program, workingDir=None):
         """ Inspect processes matching a given program name.
         Args:
             program: string matching the program name
-            folder: if not None, filter processes only with that folder as
+            workingDir: if not None, filter processes only with that folder as
                 working directory (cwd)
-            kill: if true, all processes found will be killed.
         """
         processes = {}  # store processes grouped by cwd
 
         for proc in psutil.process_iter(['pid', 'name', 'cwd', 'username']):
             if program in proc.info['name']:
                 folder = proc.info['cwd']
-                if folder not in processes:
-                    processes[folder] = []
-                processes[folder].append(proc)
+                if workingDir is None or folder == workingDir:
+                    if folder not in processes:
+                        processes[folder] = []
+                    processes[folder].append(proc)
 
-        color = Color.red if kill else Color.bold
+        return processes
 
-        for folder, procs in processes.items():
-            if not folder or folder == folder:
-                print(f"{Color.warn(folder)}")
-                prefix = 'Killing' if kill else ''
-                for p in procs:
-                    print(f"   {p.info['username']} - {prefix} {color(p.info['name']):<30} {p.cmdline()}")
-                    if kill:
-                        try:
-                            p.kill()
-                        except:
-                            pass
 
 
 
