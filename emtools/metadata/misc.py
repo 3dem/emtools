@@ -14,6 +14,8 @@
 # *
 # **************************************************************************
 
+from datetime import datetime, timedelta
+
 
 class Bins:
     def __init__(self, delimiters):
@@ -58,3 +60,28 @@ class Bins:
                                            self.delimiters[i])
 
             yield label, b, p
+
+
+class TsBins(Bins):
+    def __init__(self, items, binSize=60):
+        """
+        Initialize the TimestampBins instance.
+        Args:
+            items: Items list sorted by timestamps. Each item should have
+                a item['ts'] key with the timestamp value.
+            binSize: size of the bins in minutes
+        """
+        # Compute bin delimiters based on binSize and first and last items
+        first = items[0]
+        last = items[-1]
+        last_ts = datetime.fromtimestamp(last['ts'])
+        bindelta = timedelta(minutes=binSize)
+        delimiters = [datetime.fromtimestamp(first['ts']) + bindelta]
+
+        while delimiters[-1] < last_ts:
+            delimiters.append(delimiters[-1] + bindelta)
+
+        Bins.__init__(self, delimiters)
+        for item in items:
+            self.addValue(datetime.fromtimestamp(item['ts']))
+

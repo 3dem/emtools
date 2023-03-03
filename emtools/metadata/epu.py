@@ -61,7 +61,7 @@ class EPU:
         return data
 
     @staticmethod
-    def parse_session(inputDir, outputStar=None, backupFolder=None, lastMovie=None, limit=0):
+    def parse_session(inputDir, outputStar=None, backupFolder=None, lastMovie=None, limit=0, pl=Process):
         """ Parse input files from an EPU session.
         Args:
             inputDir: input path where the session files are.
@@ -69,6 +69,7 @@ class EPU:
             backupFolder: copy files and folder to this location
             lastMovie: last seen movie, used to avoid parsing if no new changes
             limit: development option to limit the number of parsed files
+            pl: ProcessLogger instance, by default use just Process.system
         """
         if not os.path.exists(inputDir):
             raise Exception(f"Input dir '{Color.red(inputDir)}' does not exist.")
@@ -94,8 +95,8 @@ class EPU:
                 dstFile = os.path.join(dstFolder, file)
                 if not os.path.exists(dstFile):
                     if not os.path.exists(dstFolder):
-                        Process.system(f"mkdir -p {dstFolder}")
-                    os.system(f'cp {fn} {dstFolder}')
+                        pl.system(f"mkdir -p {dstFolder}")
+                    pl.system(f'cp {fn} {dstFolder}')
 
         def _backup_pair(jpgFn):
             """ Count files and size. """
