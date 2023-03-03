@@ -15,8 +15,11 @@
 # **************************************************************************
 
 import os
+import sys
+
 import psutil
 import subprocess
+import logging
 
 from .color import Color
 
@@ -67,6 +70,24 @@ class Process:
                     processes[folder].append(proc)
 
         return processes
+
+    class Logger:
+        """ Use a logger to log command that are executed via os.system. """
+        def __init__(self, logger=None):
+            # If not logger, create one using stdout
+            if logger is None:
+                handler = logging.StreamHandler(stream=sys.stdout)
+                formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
+                handler.setFormatter(formatter)
+                logger = logging.getLogger('stdout')
+                logger.setLevel(logging.DEBUG)
+                logger.addHandler(handler)
+
+            self.logger = logger
+
+        def system(self, cmd):
+            self.logger.info(cmd)
+            os.system(cmd)
 
 
 
