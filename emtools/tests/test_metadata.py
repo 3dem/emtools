@@ -19,7 +19,7 @@ import tempfile
 from pprint import pprint
 
 from emtools.utils import Timer, Color
-from emtools.metadata import StarFile, EPU
+from emtools.metadata import StarFile, SqliteFile, EPU
 from emtools.tests import testpath
 
 
@@ -162,3 +162,51 @@ class TestEPU(unittest.TestCase):
             print(f">>> Getting session info from: {Color.bold(sessionPath)}")
             session = EPU.get_session_info(sessionPath)
             pprint(session)
+
+
+class TestSqliteFile(unittest.TestCase):
+    """
+    Tests for StarFile class.
+    """
+    BASIC_TABLES = ['Properties', 'Classes', 'sqlite_sequence', 'Objects']
+
+    def _checkColumns(self, table, columnNames):
+        for colName, col in zip(columnNames, table.getColumns()):
+            self.assertEqual(colName, col.getName())
+
+    def test_readMovies(self):
+        movieSqlite = testpath('metadata', 'scipion', 'movies.sqlite')
+        with SqliteFile(movieSqlite) as sf:
+            self.assertEqual(sf.getTableNames(), self.BASIC_TABLES)
+
+            self.assertEqual(sf.getTableSize('Objects'), 19078)
+
+            props = [row for row in sf.iterTable('Properties')]
+            self.assertEqual(len(props), 22)
+
+            props2 = [row for row in sf.iterTable('Properties', limit=10)]
+            self.assertEqual(len(props2), 10)
+
+            props3 = [row for row in sf.iterTable('Properties', start=10, limit=-1)]
+            self.assertEqual(len(props3), len(props) - 9)
+            self.assertEqual(props[9], props3[0])
+
+    def test_readParticles(self):
+        t = Timer()
+
+        partSqlite = testpath('metadata', 'scipion', 'particles.sqlite')
+        with SqliteFile(partSqlite) as sf:
+            self.assertEqual(sf.getTableNames(), self.BASIC_TABLES)
+
+            t.tic()
+            self.assertEqual(sf.getTableSize('Objects'), 1417708)
+            t.toc("Size of particles")
+
+            for row in sf.iterTable('Classes'):
+                print(row)
+
+            for row in sf.iterTable('Objects', limit=1, classes='Classes'):
+                for k, v in row.items():
+                    print(f"{k:>10}: {v}")
+                #print(row)
+

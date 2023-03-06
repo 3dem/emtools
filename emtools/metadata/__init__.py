@@ -18,5 +18,6 @@ from .table import Column, ColumnList, Table
 from .starfile import StarFile
 from .epu import EPU
 from .misc import Bins, TsBins
+from .sqlite import SqliteFile
 
 

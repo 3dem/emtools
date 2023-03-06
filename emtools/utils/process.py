@@ -62,7 +62,7 @@ class Process:
         processes = {}  # store processes grouped by cwd
 
         for proc in psutil.process_iter(['pid', 'name', 'cwd', 'username']):
-            if program in proc.info['name']:
+            if not program or program in proc.info['name']:
                 folder = proc.info['cwd']
                 if workingDir is None or folder == workingDir:
                     if folder not in processes:

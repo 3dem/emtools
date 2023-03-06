@@ -17,3 +17,4 @@
 # This emtools submodule need Scipion environment
 
 from .monitors import ProtocolMonitor, SetDict
+from .workflow import Workflow
