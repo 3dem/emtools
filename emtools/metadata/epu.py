@@ -188,8 +188,8 @@ class EPU:
                 values = {
                     'movieBaseName': _rel(fn),
                     'gsId': loc['gs'], 'fhId': loc['fh'],
-                    'beamShiftX': -9999,
-                    'beamShiftY': -9999,
+                    'beamShiftX': -9999.0,
+                    'beamShiftY': -9999.0,
                     'timeStamp': m['stat'].st_mtime
                 }
                 xmlFn = fn.replace('_fractions.tiff', '.xml')
