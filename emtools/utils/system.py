@@ -56,3 +56,19 @@ class System:
                 cpus = int(line.split()[1].strip())
 
         return cpus
+
+    @staticmethod
+    def specs():
+        """ Make an informative summary of the system specs. """
+        gpuDict = {}
+        for gpu in System.gpus():
+            name = gpu['name']
+            if name not in gpuDict:
+                gpuDict[name] = {
+                    'count': 1,
+                    'memory': gpu['memory.total']
+                }
+            else:
+                gpuDict[name]['count'] += 1
+        return {'CPUs': System.cpus(),
+                'GPUs': gpuDict}
