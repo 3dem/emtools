@@ -77,8 +77,6 @@ class EPU:
         if not os.path.isdir(inputDir):
             raise Exception(f"Input '{Color.red(inputDir)}' must be a path.")
 
-        gsTable = Table(['id', 'folder', 'image', 'xml'])
-        fhTable = Table(['id', 'image', 'xml', 'gsId'])
         movies = []
 
         stats = {'count': 0, 'size': 0}
@@ -105,107 +103,42 @@ class EPU:
 
         def _get_movies():
             for root, dirs, files in os.walk(inputDir):
-                if root.endswith('FoilHoles'):
-                    # Register the FoilHoles
-                    gsFolder = os.path.dirname(root)
-                    gsId = os.path.basename(gsFolder)
-                    for f in files:
-                        fn = os.path.join(root, f)
-                        ed.register(fn)
-                        if f.startswith('FoilHole_') and f.endswith('.jpg'):
-                            loc = EPU.get_movie_location(f)
-                            _backup_pair(fn)
-                            fhTable.addRowValues(id=loc['fh'],
-                                                 image=f,
-                                                 xml=f.replace('.jpg', '.xml'),
-                                                 gsId=gsId)
-                    files = []  # do not iterate already processed files
-
                 for f in files:
                     fn = os.path.join(root, f)
                     s = os.stat(fn)
                     ed.register(fn, s)
                     if f.startswith('GridSquare_') and f.endswith('.jpg'):
                         _backup_pair(fn)
-                        gsTable.addRowValues(id=os.path.basename(root),
-                                             folder=_rel(root),
-                                             image=f,
-                                             xml=f.replace('.jpg', '.xml'))
-
                     # Check existing movies first
                     if f.startswith('FoilHole_'):
                         if f.endswith('_fractions.tiff'):
-                            movies.append({
-                                'fn': fn,
-                                'stat': s
-                            })
+                            movies.append((fn, s))
+                        elif f.endswith('.xml'):
+                            _backup(fn)
 
         _get_movies()
-        if movies:
-            movies.sort(key=lambda m: m['stat'].st_mtime)
-            first_ts = movies[0]['stat'].st_mtime
-            first_creation = datetime.fromtimestamp(first_ts)
-            first_movie = os.path.relpath(movies[0]['fn'], inputDir)
-            last_ts = movies[-1]['stat'].st_mtime
-            last_creation = datetime.fromtimestamp(last_ts)
-            last_movie = os.path.relpath(movies[-1]['fn'], inputDir)
-            hours = (last_creation - first_creation).seconds / 3600
-        else:
-            first_movie = last_movie = ''
-            first_ts = last_ts = None
-            hours = 0
+        movies.sort(key=lambda m: m[1].st_mtime)
 
         info = {
             'size': ed.total_size,
-            'movies': len(movies),
             'sizeH': Pretty.size(ed.total_size),
-            'first_movie': first_movie,
-            'first_movie_creation': Pretty.timestamp(first_ts) if first_ts else '',
-            'last_movie': last_movie,
-            'last_movie_creation': Pretty.timestamp(last_ts) if last_ts else '',
-            'duration': f'{hours:0.2f} hours',
             'files': ed
         }
 
         if limit:
             movies = movies[:limit]
 
-        acq = None
-
+        last_movie = movies[-1][0]
         if outputStar and lastMovie != last_movie:
             for fn in to_backup:
                 _backup(fn)
-
-            out = StarFile(outputStar, 'w')
-            out.writeTable('GridSquares', gsTable)
-            out.writeTable('FoilHoles', fhTable)
-            t = Table(['movieBaseName', 'gsId', 'fhId', 'timeStamp', 'beamShiftX', 'beamShiftY'])
-            out.writeHeader('Movies', t)
-
+            data = EPU.Data(backupFolder)
             for i, m in enumerate(movies):
-                fn = m['fn']
-                loc = EPU.get_movie_location(fn)
-                values = {
-                    'movieBaseName': _rel(fn),
-                    'gsId': loc['gs'], 'fhId': loc['fh'],
-                    'beamShiftX': -9999.0,
-                    'beamShiftY': -9999.0,
-                    'timeStamp': m['stat'].st_mtime
-                }
-                xmlFn = fn.replace('_fractions.tiff', '.xml')
-                if os.path.exists(xmlFn):
-                    _backup(xmlFn)
-                    x, y = EPU.parse_beam_shifts(xmlFn)
-                    if acq is None:
-                        acq = EPU.get_acquisition(xmlFn)
-                        info['acquisition'] = acq
+                movieFn, movieStat = m
+                data.addMovie(_rel(movieFn), movieStat)
+            data.write()
 
-                    values['beamShiftX'] = x
-                    values['beamShiftY'] = y
-                out.writeRow(t.Row(**values))
-
-            out.close()
-
+        info.update(data.info())
         return info
 
     @staticmethod
@@ -248,10 +181,84 @@ class EPU:
         return loc
 
     class Data:
-        def __init__(self, epuStar):
-            with StarFile(epuStar) as sf:
-                self.gsTable = sf.getTable('GridSquares')
-                self.fhTable = sf.getTable('FoilHoles')
-                self.moviesTable = sf.getTable('Movies')
+        def __init__(self, epuFolder):
+            self._acq = None
+            self._root = epuFolder
+            self._epuStar = os.path.join(self._root, 'movies.star')
 
+            if os.path.exists(self._epuStar):
+                with StarFile(self._epuStar) as sf:
+                    self.gsTable = sf.getTable('GridSquares')
+                    self.moviesTable = sf.getTable('Movies')
+            else:
+                self.gsTable = Table(['id', 'folder', 'image', 'xml'])
+                self.moviesTable = Table(['movieBaseName', 'gsId', 'fhId',
+                                          'timeStamp', 'beamShiftX',
+                                          'beamShiftY'])
+            self.gsDict = {row.id: row for row in self.gsTable}
 
+        def write(self):
+            with StarFile(self._epuStar, 'w') as sf:
+                sf.writeTable('GridSquares', self.gsTable)
+                sf.writeTable('Movies', self.moviesTable)
+
+        def addMovie(self, movieFn, movieStat):
+            """ Add this movie and try to parse its corresponding XML file.
+            NOTE 1: movieFn should be relative path from the EPU folder
+            NOTE 2: movies should be added in ascending order regarding
+                modification time.
+            """
+            loc = EPU.get_movie_location(movieFn)
+            gridSquare = loc['gs']
+
+            if gridSquare not in self.gsDict:
+                gsFolder = os.path.join('Images-Disc1', gridSquare)
+                values = {'id': gridSquare,
+                          'folder': gsFolder,
+                          'image': 'None',
+                          'xml': 'None'}
+                for fn in os.listdir(os.path.join(self._root, gsFolder)):
+                    if fn.startswith('GridSquare'):
+                        if fn.endswith('.jpg'):
+                            values['image'] = fn
+                        elif fn.endswith('.xml'):
+                            values['xml'] = fn
+                self.gsDict[gridSquare] = self.gsTable.addRowValues(**values)
+
+            mtime = movieStat.st_mtime
+
+            values = {
+                'movieBaseName': movieFn,
+                'gsId': gridSquare, 'fhId': loc['fh'],
+                'beamShiftX': -9999.0,
+                'beamShiftY': -9999.0,
+                'timeStamp': mtime
+            }
+            xmlFn = movieFn.replace('_fractions.tiff', '.xml')
+            if os.path.exists(xmlFn):
+                x, y = EPU.parse_beam_shifts(xmlFn)
+                if self._acq is None:
+                    acq = EPU.get_acquisition(xmlFn)
+                values['beamShiftX'] = x
+                values['beamShiftY'] = y
+
+            self.moviesTable.addRowValues(**values)
+
+        def info(self):
+            """ Return a dict with some info """
+            def _rowInfo(row):
+                dt = datetime.fromtimestamp(row.timeStamp)
+                return row.timeStamp, dt, row.movieBaseName
+
+            firstTs, firstCreation, firstMovie = _rowInfo(self.moviesTable[0])
+            lastTs, lastCreation, lastMovie = _rowInfo(self.moviesTable[-1])
+            hours = (lastCreation - firstCreation).seconds / 3600
+
+            return {
+                'movies': len(self.moviesTable),
+                'first_movie': firstMovie,
+                'first_movie_creation': firstTs,
+                'last_movie': lastMovie,
+                'last_movie_creation': lastTs,
+                'duration': f'{hours:0.2f} hours',
+            }

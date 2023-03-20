@@ -161,7 +161,9 @@ class Table(ColumnList):
 
     def addRowValues(self, *args, **kwargs):
         """ Append a new Row from the given values. """
-        self._rows.append(self.Row(*args, **kwargs))
+        row = self.Row(*args, **kwargs)
+        self._rows.append(row)
+        return row
 
     def size(self):
         return len(self._rows)
