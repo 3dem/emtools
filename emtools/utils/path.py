@@ -62,8 +62,9 @@ class Path:
         return os.path.normpath(path).split(os.path.sep)
 
     @staticmethod
-    def checkDirs(dir1, dir2, verbose=False):
-        """ Use rsync as a subprocess to check if the two directories
+    def inSync(dir1, dir2, verbose=False):
+        """ Return True if both dir1 and dir2 are synchonized (i.e same content)
+        Use rsync as a subprocess to check if the two directories
         are synchronized. Both directories must exist.
         """
         if not dir1.endswith('/'):
@@ -117,11 +118,13 @@ class Path:
         Path.copyFile will be used.
         **kwargs will be passed to copyFile
         """
+        pl = kwargs.get('pl', Process)
+
         _copy = copyFileFunc or Path.copyFile
 
         def _mkdir(d):
             if not os.path.exists(d):
-                Process.system(f"mkdir {d}")
+                pl.system(f"mkdir {d}")
 
         if not os.path.exists(dir1):
             raise Exception(f"Source directory must exits")
@@ -195,7 +198,7 @@ class Main:
         elif dirs := args.copy_dir:
             Path.copyDir(dirs[0], dirs[1], sleep=args.delay)
         elif dirs := args.check_dirs:
-            sync = Path.checkDirs(dirs[0], dirs[1], verbose=True)
+            sync = Path.inSync(dirs[0], dirs[1], verbose=True)
             s = Color.green('in SYNC') if sync else Color.red('NOT in SYNC')
             print(f"Dirs are {s}")
 
