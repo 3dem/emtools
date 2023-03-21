@@ -111,14 +111,14 @@ class Path:
         #Process.system(f'cp {file1} {file2}')
 
     @staticmethod
-    def copyDir(dir1, dir2, copyFileFunc=None, **kwargs):
+    def copyDir(dir1, dir2, copyFileFunc=None, pl=None, **kwargs):
         """ This is a test method to copy a whole directory and control
         the speed of the copy and how files appear in the destination.
         A custom copyFileFunc can be passed to copy files. If None,
         Path.copyFile will be used.
         **kwargs will be passed to copyFile
         """
-        pl = kwargs.get('pl', Process)
+        pl = pl or Process
 
         _copy = copyFileFunc or Path.copyFile
 

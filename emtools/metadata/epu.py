@@ -132,7 +132,8 @@ class EPU:
         if outputStar and lastMovie != last_movie:
             for fn in to_backup:
                 _backup(fn)
-            data = EPU.Data(backupFolder)
+            os.remove(outputStar)
+            data = EPU.Data(inputDir, backupFolder)
             for i, m in enumerate(movies):
                 movieFn, movieStat = m
                 data.addMovie(_rel(movieFn), movieStat)
@@ -181,10 +182,11 @@ class EPU:
         return loc
 
     class Data:
-        def __init__(self, epuFolder):
+        def __init__(self, dataFolder, epuFolder):
             self._acq = None
-            self._root = epuFolder
-            self._epuStar = os.path.join(self._root, 'movies.star')
+            self._dataFolder = dataFolder
+            self._epuFolder = epuFolder
+            self._epuStar = os.path.join(self._epuFolder, 'movies.star')
 
             if os.path.exists(self._epuStar):
                 with StarFile(self._epuStar) as sf:
@@ -217,7 +219,7 @@ class EPU:
                           'folder': gsFolder,
                           'image': 'None',
                           'xml': 'None'}
-                for fn in os.listdir(os.path.join(self._root, gsFolder)):
+                for fn in os.listdir(os.path.join(self._epuFolder, gsFolder)):
                     if fn.startswith('GridSquare'):
                         if fn.endswith('.jpg'):
                             values['image'] = fn
