@@ -97,6 +97,18 @@ class TestStarFile(unittest.TestCase):
                     self.assertEqual(len(rows), size)
                     self._checkColumns(t, colNames)
 
+    def test_getTableRow(self):
+        movieStar = testpath('metadata', 'movie_frameImage.star')
+        with StarFile(movieStar) as sf:
+            t1 = sf.getTable('global_shift')  # 600 rows
+            for i in [0, 1, 2, 23]:
+                row = sf.getTableRow('global_shift', i)
+                self.assertEqual(row, t1[i])
+
+            t2 = sf.getTable('general')  # 1 row
+            row = sf.getTableRow('general', 0)
+            self.assertEqual(row, t2[0])
+
     def test_read_particlesStar(self):
         partStar = testpath('metadata', 'particles_1k.star')
 
@@ -190,6 +202,19 @@ class TestSqliteFile(unittest.TestCase):
             props3 = [row for row in sf.iterTable('Properties', start=10, limit=-1)]
             self.assertEqual(len(props3), len(props) - 9)
             self.assertEqual(props[9], props3[0])
+
+    def test_getTableRow(self):
+        movieSqlite = testpath('metadata', 'scipion', 'movies.sqlite')
+        with SqliteFile(movieSqlite) as sf:
+            t1 = [row for row in sf.iterTable('Objects')]
+            for i in [0, 1, 2, 19077]:
+                row = sf.getTableRow('Objects', i)
+                self.assertEqual(row, t1[i])
+
+            t2 = [row for row in sf.iterTable('Properties')]
+            for i in [0, 1, 20, 21]:
+                row = sf.getTableRow('Properties', i)
+                self.assertEqual(row, t2[i])
 
     def test_readParticles(self):
         t = Timer()
