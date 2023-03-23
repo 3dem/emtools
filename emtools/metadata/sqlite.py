@@ -94,8 +94,6 @@ class SqliteFile(AbstractContextManager):
         if 'start' in kwargs:
             query += f" OFFSET {kwargs['start']}"
 
-        print(query)
-
         if 'classes' not in kwargs:
             res = self._con.execute(query)
             while row := res.fetchone():

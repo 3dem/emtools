@@ -148,7 +148,7 @@ class StarFile(AbstractContextManager):
             limit: limit to this number of elements
         """
         start = kwargs.get('start', 0)
-        limit = kwargs.get('limit', 1)
+        limit = kwargs.get('limit', None)
 
         self.__createTable(tableName, **kwargs)
         if self._singleRow:
