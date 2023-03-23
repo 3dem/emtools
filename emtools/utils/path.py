@@ -162,6 +162,13 @@ class Path:
         """ Remove extension from basename """
         return os.path.splitext(filename)[0]
 
+    @staticmethod
+    def exists(path):
+        """ Just avoid empty or None path to raise exception
+        from os.path.exists.
+        """
+        return path and os.path.exists(path)
+
 
 class Main:
     @staticmethod

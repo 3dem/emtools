@@ -42,7 +42,6 @@ class System:
                     values = line.split(',')
                     gpus.append({k.strip().split()[0]: v.strip()
                                  for k, v in zip(keys, values)})
-                print(i)
         return gpus
 
     @staticmethod
