@@ -135,17 +135,20 @@ class StarFile(AbstractContextManager):
 
     def getTableInfo(self, tableName, **kwargs):
         """ Similar to getTable(), but it will not parse the data rows.
-        Only the colums will be read into the Table instance.
+        Only the columns will be read into the Table instance.
         """
         self.__createTable(tableName, **kwargs)
         return self._table
 
     def iterTable(self, tableName, **kwargs):
-        """ Only iterate over the table's rows and do no create
+        """ Only iterate over the table's rows and do not create
         a Table in memory to store all rows.
+        Kwargs:
+            start: starting index, first one is 0
+            limit: limit to this number of elements
         """
-        start = kwargs.get('start', 1) - 1
-        limit = kwargs.get('limit', 0)
+        start = kwargs.get('start', 0)
+        limit = kwargs.get('limit', 1)
 
         self.__createTable(tableName, **kwargs)
         if self._singleRow:
@@ -158,6 +161,13 @@ class StarFile(AbstractContextManager):
                     yield self.__rowFromValues(line.split())
                 if limit and c == limit:
                     break
+
+    def getTableRow(self, tableName, rowIndex, **kwargs):
+        """ Get a given row by index. Extra args are passed to iterTable. """
+        kwargs['start'] = rowIndex
+        kwargs['limit'] = 1
+        for row in self.iterTable(tableName, **kwargs):
+            return row
 
     def __loadFile(self, inputFile, mode):
         return open(inputFile, mode) if isinstance(inputFile, str) else inputFile

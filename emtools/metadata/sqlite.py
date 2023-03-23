@@ -86,15 +86,13 @@ class SqliteFile(AbstractContextManager):
                 start: start from a given element
                 classes: read column names from a 'classes' table
         """
-        #start = kwargs.get('start', 1) - 1
-        #limit = kwargs.get('limit', 0)
         query = f"SELECT * FROM {tableName}"
 
         if 'limit' in kwargs:
             query += f" LIMIT {kwargs['limit']}"
 
         if 'start' in kwargs:
-            query += f" OFFSET {kwargs['start'] - 1}"
+            query += f" OFFSET {kwargs['start']}"
 
         print(query)
 
@@ -117,6 +115,13 @@ class SqliteFile(AbstractContextManager):
                 yield row
             # Restore row factory
             self._con.row_factory = self._dict_factory
+
+    def getTableRow(self, tableName, rowIndex, **kwargs):
+        """ Get a given row by index. Extra args are passed to iterTable. """
+        kwargs['start'] = rowIndex
+        kwargs['limit'] = 1
+        for row in self.iterTable(tableName, **kwargs):
+            return row
 
     def close(self):
         if getattr(self, '_con', None):
