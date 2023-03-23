@@ -132,7 +132,8 @@ class EPU:
         if outputStar and lastMovie != last_movie:
             for fn in to_backup:
                 _backup(fn)
-            os.remove(outputStar)
+            if os.path.exists(outputStar):
+                os.remove(outputStar)
             data = EPU.Data(inputDir, backupFolder)
             for i, m in enumerate(movies):
                 movieFn, movieStat = m
@@ -173,7 +174,12 @@ class EPU:
     @staticmethod
     def get_movie_location(movieName):
         loc = {'gs': None, 'fh': None}
-        for p in Path.splitall(movieName):
+        # FIXME Hack to handle Scipion change of ../Data/FoilHole.. to Data_FoilHole
+        if '_Data_FoilHole_' in movieName:
+            parts = os.path.basename(movieName).split('_Data_')
+        else:
+            parts = Path.splitall(movieName)
+        for p in parts:
             if p.startswith('GridSquare_'):
                 loc['gs'] = p
             elif p.startswith('FoilHole_'):
@@ -248,6 +254,10 @@ class EPU:
 
         def info(self):
             """ Return a dict with some info """
+
+            if len(self.moviesTable) == 0:
+                return {}
+
             def _rowInfo(row):
                 dt = datetime.fromtimestamp(row.timeStamp)
                 return row.timeStamp, dt, row.movieBaseName
