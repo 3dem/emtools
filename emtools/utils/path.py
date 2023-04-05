@@ -63,7 +63,7 @@ class Path:
 
     @staticmethod
     def inSync(dir1, dir2, verbose=False):
-        """ Return True if both dir1 and dir2 are synchonized (i.e same content)
+        """ Return True if both dir1 and dir2 are synchronized (i.e. same content)
         Use rsync as a subprocess to check if the two directories
         are synchronized. Both directories must exist.
         """

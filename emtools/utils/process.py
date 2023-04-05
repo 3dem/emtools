@@ -16,6 +16,7 @@
 
 import os
 import sys
+import time
 
 import psutil
 import subprocess
@@ -49,7 +50,7 @@ class Process:
     def system(cmd, only_print=False):
         print(cmd)
         if not only_print:
-            os.system(cmd)
+            return os.system(cmd)
 
     @staticmethod
     def ps(program, workingDir=None):
@@ -85,9 +86,30 @@ class Process:
 
             self.logger = logger
 
-        def system(self, cmd):
-            self.logger.info(cmd)
-            os.system(cmd)
+        def system(self, cmd, retry=None):
+            """ Execute a command and log it.
+            Args:
+                 cmd: Command string to be executed with os.system
+                 retry: If not None, it should be the time in seconds
+                    after which the command will be re-executed on failure
+                    until successful completion.
+            Return:
+                  last exit_status from os.system result
+            """
+            while True:
+                self.logger.info(cmd)
+                exit_status = os.system(cmd)
+                if exit_status:
+                    self.logger.error(f"COMMAND FAILED: {cmd} , "
+                                      f"exit: {exit_status}")
+                    if retry:
+                        time.sleep(retry)
+                    else:
+                        break
+                else:
+                    break
+
+            return exit_status
 
 
 
