@@ -68,6 +68,9 @@ class Workflow:
 
         return prot
 
+    def saveProtocol(self, prot):
+        return self.project.saveProtocol(prot)
+
     def wait(self, prot, **kwargs):
         pm = ProtocolMonitor(prot)
         pm.wait(**kwargs)
