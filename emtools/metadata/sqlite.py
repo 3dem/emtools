@@ -88,6 +88,9 @@ class SqliteFile(AbstractContextManager):
         """
         query = f"SELECT * FROM {tableName}"
 
+        if 'start' in kwargs and 'limit' not in kwargs:
+            kwargs['limit'] = -1
+
         if 'limit' in kwargs:
             query += f" LIMIT {kwargs['limit']}"
 

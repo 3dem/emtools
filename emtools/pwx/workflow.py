@@ -64,9 +64,10 @@ class Workflow:
 
         if wait:
             kwargs = wait if isinstance(wait, dict) else {}
-            prot = self.wait(prot, **kwargs)
+            #prot = self.wait(prot, **kwargs)
+            self.wait(prot, **kwargs)
 
-        return prot
+        #return prot
 
     def saveProtocol(self, prot):
         return self.project.saveProtocol(prot)
@@ -74,5 +75,10 @@ class Workflow:
     def wait(self, prot, **kwargs):
         pm = ProtocolMonitor(prot)
         pm.wait(**kwargs)
-        self.project._updateProtocol(prot)
-        return self.project.getProtocol(prot.getObjId())
+        return self.updateProtocol(prot)
+
+    def updateProtocol(self, prot):
+        """ Reload a protocol from db. Return True if it was reloaded. """
+        r = self.project._updateProtocol(prot)
+        self.project.mapper.commit()
+        return r == pw.PROTOCOL_UPDATED
