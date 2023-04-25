@@ -23,6 +23,7 @@
 import os
 import sys
 import argparse
+import time
 from collections import OrderedDict, namedtuple
 from contextlib import AbstractContextManager
 import sqlite3
@@ -132,6 +133,22 @@ class SqliteFile(AbstractContextManager):
     def _dict_factory(self, cursor, row):
         fields = [column[0] for column in cursor.description]
         return {key: value for key, value in zip(fields, row)}
+
+    @staticmethod
+    def copyDb(inputFile, outputFile, tries=1, wait=10):
+        """ Make a copy of the db using Sqlite's backup API.
+        This way it will lock the db if other processes are using it. """
+        while tries:
+            try:
+                inputDb = sqlite3.connect(inputFile)
+                outputDb = sqlite3.connect(outputFile)
+                inputDb.backup(outputDb)
+                inputDb.close()
+                outputDb.close()
+                tries = 0  # No need for more tries
+            except:
+                tries -= 1
+                time.sleep(wait)
 
 
 # --------- Helper functions  ------------------------

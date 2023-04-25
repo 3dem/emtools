@@ -32,9 +32,13 @@ class Process:
         self._p = subprocess.run(args, capture_output=True, text=True)
         self.stdout = self._p.stdout
         self.stderr = self._p.stderr
-        #FIXME: Maybe some cases returncode could be non-zero
         if self._p.returncode != 0:
-            raise Exception(self.stderr)
+            if kwargs.get('raise', True):
+                raise Exception(self.stderr)
+
+    @property
+    def returncode(self):
+        return self._p.returncode
 
     def lines(self):
         for line in self.stdout.split('\n'):
