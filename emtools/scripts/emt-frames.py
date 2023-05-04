@@ -35,6 +35,11 @@ if __name__ == '__main__':
                    help="Do no take any action, just print commands. ")
     args = p.parse_args()
 
+    def _mkdir(root, folder):
+        folderPath = os.path.join(root, folder)
+        if not os.path.exists(folderPath):
+            Process.system(f"mkdir {folderPath}")
+
     def _checkdirs(*dirs):
         for d in dirs:
             if not os.path.exists(d):
@@ -51,19 +56,25 @@ if __name__ == '__main__':
         return count, size
 
     def _move(srcFile, dstFile):
-        Process.system(f'rsync -ac --remove-source-files {srcFile} {dstFile}')
+        Process.system(f'rsync -ac --no-perms --remove-source-files {srcFile} {dstFile}')
 
     if args.transfer:
         src, dst = args.transfer
         _checkdirs(src, dst)
 
         for root, dirs, files in os.walk(src):
+            rootDst = root.replace(src, dst)
+            for d in dirs:
+                _mkdir(rootDst, d)
             for f in files:
                 if f.endswith('fractions.tiff'):
                     srcFile = os.path.join(root, f)
                     dstFile = srcFile.replace(src, dst)
-                    Process.system(f'rsync -ac --remove-source-files {srcFile} {dstFile}',
+                    Process.system(f'rsync -ac --no-perms --remove-source-files {srcFile} {dstFile}',
                                    only_print=args.dry)
+
+        Process.system(f'rsync -ac --no-perms {src}/ {dst}/',
+                       only_print=args.dry)
 
     else:  # Default option to scan directories and check for movies
         gscem_pattern = '/research/cryo_core_raw/*/*/2023/raw/EPU/*/'
@@ -73,15 +84,17 @@ if __name__ == '__main__':
             for f in os.listdir(gf):
                 gscem[f] = os.path.join(gf, f)
 
-        frame_folders = os.listdir('/mnt/EPU_frames/')
+        frames_root = '/mnt/EPU_frames/'
+        frame_folders = [os.path.join(frames_root, f) for f in os.listdir(frames_root)]
+
         frame_folders.sort(key=lambda f: os.path.getmtime(f))
 
         for f in frame_folders:
             frames, size = _frames(f)
             if frames:
-                gf = gscem.get(f, None)
+                gf = gscem.get(os.path.basename(f), None)
                 gfs = Color.bold(gf) if gf else 'None'
-                print(f"{f}: {Color.red(frames)} {Pretty.size(size)}\n  -> {gfs}")
+                print(f"\n{f}: {Color.red(frames)} {Pretty.size(size)}\n  -> {gfs}")
 
     #
 

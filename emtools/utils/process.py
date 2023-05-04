@@ -90,6 +90,9 @@ class Process:
 
             self.logger = logger
 
+            # If True, only log bug not make the system call
+            self.system_only_log = False
+
         def system(self, cmd, retry=None):
             """ Execute a command and log it.
             Args:
@@ -102,7 +105,9 @@ class Process:
             """
             while True:
                 self.logger.info(cmd)
-                exit_status = os.system(cmd)
+                exit_status = 0
+                if not self.system_only_log:
+                    exit_status = os.system(cmd)
                 if exit_status:
                     self.logger.error(f"COMMAND FAILED: {cmd} , "
                                       f"exit: {exit_status}")

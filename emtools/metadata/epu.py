@@ -61,7 +61,7 @@ class EPU:
         return data
 
     @staticmethod
-    def parse_session(inputDir, outputStar=None, backupFolder=None, lastMovie=None, limit=0, pl=Process):
+    def parse_session(inputDir, outputStar=None, backupFolder=None, doBackup=False, lastMovie=None, limit=0, pl=Process):
         """ Parse input files from an EPU session.
         Args:
             inputDir: input path where the session files are.
@@ -87,7 +87,7 @@ class EPU:
             return os.path.relpath(fn, inputDir)
 
         def _backup(fn):
-            if backupFolder:
+            if backupFolder and doBackup:
                 folder, file = os.path.split(fn)
                 dstFolder = os.path.join(backupFolder, _rel(folder))
                 dstFile = os.path.join(dstFolder, file)
@@ -140,7 +140,7 @@ class EPU:
                 data.addMovie(_rel(movieFn), movieStat)
             data.write()
 
-        info.update(data.info())
+            info.update(data.info())
         return info
 
     @staticmethod

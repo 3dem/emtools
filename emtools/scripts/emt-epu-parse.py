@@ -37,9 +37,12 @@ def main():
 
     kwargs = {}
     if not args.info:
+        doBackup = bool(args.backup)
+        backupFolder = args.backup or os.path.dirname(args.output)
         kwargs = {
             'outputStar': args.output,
-            'backupFolder': args.backup,
+            'backupFolder': backupFolder,
+            'doBackup': doBackup,
             'limit': args.limit
         }
         if args.last_movie:
