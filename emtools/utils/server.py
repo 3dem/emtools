@@ -16,15 +16,12 @@
 
 import sys
 import json
-import time
+from datetime import datetime
 import traceback
-import threading
 import socket
 from socketserver import BaseRequestHandler, ThreadingTCPServer
-from datetime import datetime
 
 from .pretty import Pretty
-from .color import Color
 
 
 def send_object(s, obj):
@@ -68,7 +65,7 @@ class JsonRequestHandler(BaseRequestHandler):
             result = function(*args, **kwargs) or {}
             r = {'result': result}
         except Exception as e:
-
+            print(e)
             print(traceback.format_exc())
             r = {'error': 'Wrong input object'}
         send_object(self.request, r)

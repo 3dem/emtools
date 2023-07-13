@@ -4,15 +4,11 @@
 # accordingly in the particles starfile and writes a new particles star file
 # with the updated values
 
-import sys
 import os
 import argparse
-from datetime import datetime
-from collections import OrderedDict
 from pprint import pprint
 
-from emtools.utils import Timer, Color, Path, Pretty, Process
-from emtools.metadata import StarFile, EPU, Table
+from emtools.metadata import EPU
 
 
 def main():

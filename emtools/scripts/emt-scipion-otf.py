@@ -21,15 +21,13 @@ import ast
 import time
 from collections import OrderedDict
 import datetime as dt
-from glob import glob
-from pprint import pprint
 
-from emtools.utils import Process, Color, System, Pipeline, Timer
+from emtools.utils import Process, Color, System, Pipeline
 from emtools.metadata import EPU, SqliteFile, StarFile, Table
 
 import pyworkflow as pw
 from pyworkflow.project import Project
-from pyworkflow.protocol import MODE_RESTART, STATUS_FINISHED
+from pyworkflow.protocol import STATUS_FINISHED
 from pwem.objects import SetOfParticles
 from emtools.pwx import Workflow
 
@@ -247,7 +245,7 @@ def run2DPipeline(wf, protExtract):
 
     ppl = Pipeline()
     g = ppl.addGenerator(_generate2D)
-    r2d = ppl.addProcessor(g.outputQueue, _run2D)
+    ppl.addProcessor(g.outputQueue, _run2D)
     ppl.run()
 
 
@@ -425,12 +423,9 @@ def restart(workingDir, ids):
 
     all_protocols = [2, 88, 198, 262, 318]
 
-    # to_restart = [88]
-
     for protId in all_protocols:
         prot = project.getProtocol(protId)
         clsName = prot.getClassName()
-        suffix = ''
         print(f"- {prot.getObjId()}: {clsName}")
         if prot.getObjId() in ids:
             print("\t * Stopping...")
@@ -553,7 +548,6 @@ def write_stars(workingDir):
     """ Restart one or more protocols. """
     project = Project(pw.Config.getDomain(), workingDir)
     project.load()
-    wf = Workflow(project)
 
     for prot in project.getRuns():
         clsName = prot.getClassName()

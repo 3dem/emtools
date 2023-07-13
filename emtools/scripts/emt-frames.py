@@ -16,14 +16,10 @@
 # **************************************************************************
 
 import os
-import time
 import argparse
 from glob import glob
-from datetime import datetime, timedelta
-from pprint import pprint
 
 from emtools.utils import Process, Color, Pretty
-from emtools.metadata import EPU
 
 
 if __name__ == '__main__':
@@ -96,6 +92,5 @@ if __name__ == '__main__':
                 gfs = Color.bold(gf) if gf else 'None'
                 print(f"\n{f}: {Color.red(frames)} {Pretty.size(size)}\n  -> {gfs}")
 
-    #
 
 

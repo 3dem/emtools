@@ -303,7 +303,7 @@ def stats(pattern, bin, plot):
         values = [b['count'] for b in bins]
         fig, ax = plt.subplots(figsize=(24, 8))
         w = width * 0.9
-        rects1 = ax.bar(x + w / 2, values, w, label='Men')
+        ax.bar(x + w / 2, values, w, label='Men')
         # Add some text for labels, title and custom x-axis tick labels, etc.
         ax.set_ylabel('Files')
         ax.set_title(f'Files generated every {bin} minutes')

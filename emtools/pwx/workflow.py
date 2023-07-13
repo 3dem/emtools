@@ -14,13 +14,7 @@
 # *
 # **************************************************************************
 
-import os
-import time
-from datetime import datetime
-from collections import OrderedDict
-
 import pyworkflow as pw
-import pyworkflow.protocol as pwprot
 
 from emtools.utils import Color
 from .monitors import ProtocolMonitor

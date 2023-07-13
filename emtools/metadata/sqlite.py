@@ -19,16 +19,9 @@
 # *
 # **************************************************************************
 
-
-import os
-import sys
-import argparse
 import time
-from collections import OrderedDict, namedtuple
 from contextlib import AbstractContextManager
 import sqlite3
-
-from .table import ColumnList, Table
 
 
 class SqliteFile(AbstractContextManager):
@@ -83,8 +76,8 @@ class SqliteFile(AbstractContextManager):
         Args:
             tableName: the name of the table to read, it can be the empty string
             kwargs:
-                limit: integer value to limit the number of elements
-                start: start from a given element
+                start: starting index, first one is 0
+                limit: limit to this number of elements
                 classes: read column names from a 'classes' table
         """
         query = f"SELECT * FROM {tableName}"
@@ -149,30 +142,3 @@ class SqliteFile(AbstractContextManager):
             except:
                 tries -= 1
                 time.sleep(wait)
-
-
-# --------- Helper functions  ------------------------
-def _guessType(strValue):
-    try:
-        int(strValue)
-        return int
-    except ValueError:
-        try:
-            float(strValue)
-            return float
-        except ValueError:
-            return str
-
-
-def _guessTypesFromLine(line):
-    return [_guessType(v) for v in line.split()]
-
-
-def _formatValue(v):
-    return '%0.6f' % v if isinstance(v, float) else str(v)
-
-
-def _getFormatStr(v):
-    return '.6f' if isinstance(v, float) else ''
-
-

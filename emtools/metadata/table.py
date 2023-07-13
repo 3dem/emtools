@@ -22,9 +22,6 @@
 __author__ = 'Jose Miguel de la Rosa Trevin, Grigory Sharov'
 
 
-import os
-import sys
-import argparse
 from collections import OrderedDict, namedtuple
 
 
@@ -257,7 +254,8 @@ class Table(ColumnList):
     def sort(self, key, reverse=False):
         """ Sort the table in place using the provided key.
         If key is a string, it should be the name of one column. """
-        keyFunc = lambda r: getattr(r, key) if isinstance(key, str) else key
+        def keyFunc(r):
+            return getattr(r, key) if isinstance(key, str) else key
         self._rows.sort(key=keyFunc, reverse=reverse)
 
     def print(self, formatStr=None):
@@ -291,15 +289,9 @@ def _guessType(strValue):
             return str
 
 
-def _guessTypesFromLine(line):
-    return [_guessType(v) for v in line.split()]
-
-
 def _formatValue(v):
     return '%0.6f' % v if isinstance(v, float) else str(v)
 
 
 def _getFormatStr(v):
     return '.6f' if isinstance(v, float) else ''
-
-

@@ -21,11 +21,7 @@
 
 __author__ = 'Jose Miguel de la Rosa Trevin, Grigory Sharov'
 
-
-import os
 import sys
-import argparse
-from collections import OrderedDict, namedtuple
 from contextlib import AbstractContextManager
 
 from .table import ColumnList, Table
@@ -364,22 +360,6 @@ class StarFile(AbstractContextManager):
 
 
 # --------- Helper functions  ------------------------
-def _guessType(strValue):
-    try:
-        int(strValue)
-        return int
-    except ValueError:
-        try:
-            float(strValue)
-            return float
-        except ValueError:
-            return str
-
-
-def _guessTypesFromLine(line):
-    return [_guessType(v) for v in line.split()]
-
-
 def _formatValue(v):
     return '%0.6f' % v if isinstance(v, float) else str(v)
 

@@ -36,7 +36,7 @@ class TestTimer(unittest.TestCase):
         time.sleep(1)
         t.toc()
 
-        with Timer('Time in context:') as t2:
+        with Timer('Time in context:'):
             time.sleep(2)
 
 

@@ -16,7 +16,6 @@
 
 import os
 from datetime import datetime
-from glob import glob
 import xmltodict
 
 from emtools.utils import Pretty, Path, Color, Process
@@ -78,8 +77,6 @@ class EPU:
             raise Exception(f"Input '{Color.red(inputDir)}' must be a path.")
 
         movies = []
-
-        stats = {'count': 0, 'size': 0}
         to_backup = []
         ed = Path.ExtDict()
 
@@ -246,7 +243,7 @@ class EPU:
             if os.path.exists(xmlFn):
                 x, y = EPU.parse_beam_shifts(xmlFn)
                 if self._acq is None:
-                    acq = EPU.get_acquisition(xmlFn)
+                    self._acq = EPU.get_acquisition(xmlFn)
                 values['beamShiftX'] = x
                 values['beamShiftY'] = y
 
