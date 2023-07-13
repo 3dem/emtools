@@ -36,11 +36,21 @@ class TestTimer(unittest.TestCase):
         time.sleep(1)
         t.toc()
 
-        with Timer('Time in context:') as t2:
+        with Timer('Time in context:'):
             time.sleep(2)
 
 
 class TestSystem(unittest.TestCase):
-    def test_gpus(self):
-        gpus = System.gpus()
-        pprint(gpus)
+    def test_funcs(self):
+        # Specs
+        specs = System.specs()
+        self.assertTrue('GPUs' in specs)
+        self.assertTrue('CPUs' in specs)
+        self.assertGreater(specs['CPUs'], 0)
+        print(">>> CPUs: ", specs['CPUs'])
+        print(">>> GPUs: ", specs['GPUs'])
+
+        # Hostname
+        h = System.hostname()
+        print(">>> Hostname: ", h)
+        self.assertTrue(bool(h))

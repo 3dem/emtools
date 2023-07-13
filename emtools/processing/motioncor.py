@@ -1,13 +1,12 @@
 #!/usr/bin/env python
 
 import os
-import sys
 import argparse
 import threading
 from glob import glob
 from uuid import uuid4
 
-from emtools.utils import Timer, Color, Pipeline
+from emtools.utils import Timer, Pipeline
 from emtools.metadata import StarFile
 
 

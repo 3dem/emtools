@@ -22,23 +22,26 @@ import psutil
 import subprocess
 import logging
 
-from .color import Color
-
 
 class Process:
     def __init__(self, *args, **kwargs):
         """ Create a process using subprocess.run. """
         self.args = args
-        self._p = subprocess.run(args, capture_output=True, text=True)
-        self.stdout = self._p.stdout
-        self.stderr = self._p.stderr
-        if self._p.returncode != 0:
-            if kwargs.get('raise', True):
-                raise Exception(self.stderr)
+        error = ''
+        try:
+            self._p = subprocess.run(args, capture_output=True, text=True)
+            self.stdout = self._p.stdout
+            self.stderr = self._p.stderr
+            self.returncode = self._p.returncode
+            if self.returncode != 0:
+                error = self._p.stderr
+        except Exception as e:
+            self._p = None
+            self.returncode = -1
+            error = str(e)
 
-    @property
-    def returncode(self):
-        return self._p.returncode
+        if error and kwargs.get('doRaise', True):
+            raise Exception(error)
 
     def lines(self):
         for line in self.stdout.split('\n'):

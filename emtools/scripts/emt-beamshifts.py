@@ -8,7 +8,7 @@ import sys
 import os
 import argparse
 
-from emtools.utils import Timer, Color
+from emtools.utils import Color
 from emtools.metadata import StarFile, EPU, Table
 
 

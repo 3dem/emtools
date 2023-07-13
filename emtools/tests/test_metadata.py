@@ -37,6 +37,9 @@ class TestStarFile(unittest.TestCase):
         Read a star file with several blocks
         """
         movieStar = testpath('metadata', 'movie_frameImage.star')
+        if movieStar is None:
+            return
+
         expectedTables = {
             'general': {
                 'columns': ['rlnImageSizeX', 'rlnImageSizeY', 'rlnImageSizeZ',
@@ -78,7 +81,9 @@ class TestStarFile(unittest.TestCase):
             # Read table in a different order as they appear in file
             # also before the getTableNames() call that create the offsets
             t1 = sf.getTable('local_shift')
+            self.assertGreater(len(t1), 0)
             t2 = sf.getTable('general')
+            self.assertGreater(len(t2), 0)
 
             self.assertEqual(set(sf.getTableNames()),
                              set(expectedTables.keys()))
@@ -99,6 +104,9 @@ class TestStarFile(unittest.TestCase):
 
     def test_getTableRow(self):
         movieStar = testpath('metadata', 'movie_frameImage.star')
+        if movieStar is None:
+            return
+
         with StarFile(movieStar) as sf:
             t1 = sf.getTable('global_shift')  # 600 rows
             for i in [0, 1, 2, 23]:
@@ -111,6 +119,8 @@ class TestStarFile(unittest.TestCase):
 
     def test_read_particlesStar(self):
         partStar = testpath('metadata', 'particles_1k.star')
+        if partStar is None:
+            return
 
         with StarFile(partStar) as sf:
             ptable = sf.getTable('particles')
@@ -159,6 +169,8 @@ class TestEPU(unittest.TestCase):
     def test_read_acquisition(self):
         fn = 'FoilHole_5850127_Data_5798426_5798428_20221104_061329.xml'
         xml = testpath('metadata', fn)
+        if xml is None:
+            return
 
         acq = EPU.get_acquisition(xml)
         self.assertTrue(all(k in acq for k in ['camera', 'instrument',
@@ -188,6 +200,9 @@ class TestSqliteFile(unittest.TestCase):
 
     def test_readMovies(self):
         movieSqlite = testpath('metadata', 'scipion', 'movies.sqlite')
+        if movieSqlite is None:
+            return
+
         with SqliteFile(movieSqlite) as sf:
             self.assertEqual(sf.getTableNames(), self.BASIC_TABLES)
 
@@ -196,15 +211,20 @@ class TestSqliteFile(unittest.TestCase):
             props = [row for row in sf.iterTable('Properties')]
             self.assertEqual(len(props), 22)
 
+            # Retrieve only 10 items starting from the beginning
             props2 = [row for row in sf.iterTable('Properties', limit=10)]
             self.assertEqual(len(props2), 10)
 
-            props3 = [row for row in sf.iterTable('Properties', start=10, limit=-1)]
+            # Retrieve all items starting from item 10th
+            props3 = [row for row in sf.iterTable('Properties', start=9)]
             self.assertEqual(len(props3), len(props) - 9)
             self.assertEqual(props[9], props3[0])
 
     def test_getTableRow(self):
         movieSqlite = testpath('metadata', 'scipion', 'movies.sqlite')
+        if movieSqlite is None:
+            return
+
         with SqliteFile(movieSqlite) as sf:
             t1 = [row for row in sf.iterTable('Objects')]
             for i in [0, 1, 2, 19077]:
@@ -220,6 +240,9 @@ class TestSqliteFile(unittest.TestCase):
         t = Timer()
 
         partSqlite = testpath('metadata', 'scipion', 'particles.sqlite')
+        if partSqlite is None:
+            return
+
         with SqliteFile(partSqlite) as sf:
             self.assertEqual(sf.getTableNames(), self.BASIC_TABLES)
 
@@ -227,11 +250,9 @@ class TestSqliteFile(unittest.TestCase):
             self.assertEqual(sf.getTableSize('Objects'), 1417708)
             t.toc("Size of particles")
 
-            for row in sf.iterTable('Classes'):
-                print(row)
+            rows = [r for r in sf.iterTable('Classes')]
+            self.assertEqual(len(rows), 49)
 
-            for row in sf.iterTable('Objects', limit=1, classes='Classes'):
-                for k, v in row.items():
-                    print(f"{k:>10}: {v}")
-                #print(row)
-
+            # for row in sf.iterTable('Objects', limit=1, classes='Classes'):
+            #     for k, v in row.items():
+            #         print(f"{k:>10}: {v}")

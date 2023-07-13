@@ -22,9 +22,6 @@
 __author__ = 'Jose Miguel de la Rosa Trevin, Grigory Sharov'
 
 
-import os
-import sys
-import argparse
 from collections import OrderedDict, namedtuple
 
 
@@ -257,47 +254,13 @@ class Table(ColumnList):
     def sort(self, key, reverse=False):
         """ Sort the table in place using the provided key.
         If key is a string, it should be the name of one column. """
-        keyFunc = lambda r: getattr(r, key) if isinstance(key, str) else key
+        def keyFunc(r):
+            return getattr(r, key) if isinstance(key, str) else key
         self._rows.sort(key=keyFunc, reverse=reverse)
 
     def print(self, formatStr=None):
         for row in self._rows:
             print(formatStr.format(**row._asdict()))
-
-    @staticmethod
-    def iterRows(fileName, key=None, reverse=False, **kwargs):
-        """
-        Convenience method to iterate over the rows of a given table.
-
-        Args:
-            fileName: the input star filename, it might contain the '@'
-                to specify the tableName
-            key: key function to sort elements, it can also be a string that
-                will be used to retrieve the value of the column with that name.
-            reverse: If true reverse the sort order.
-            **kwargs:
-                tableName: can be used explicit instead of @ in the filename.
-                types: It can be a dictionary {columnName: columnType} pairs that
-                    allows to specify types for certain columns in the internal reader
-        """
-        if '@' in fileName:
-            tableName, fileName = fileName.split('@')
-        else:
-            tableName = kwargs.pop('tableName', None)
-
-        # Create a table iterator
-        with open(fileName) as f:
-            reader = _Reader(f, tableName, **kwargs)
-            if key is None:
-                for row in reader:
-                    yield row
-            else:
-                if isinstance(key, str):
-                    keyFunc = lambda r: getattr(r, key)
-                else:
-                    keyFunc = key
-                for row in sorted(reader, key=keyFunc, reverse=reverse):
-                    yield row
 
     def __len__(self):
         return self.size()
@@ -326,15 +289,9 @@ def _guessType(strValue):
             return str
 
 
-def _guessTypesFromLine(line):
-    return [_guessType(v) for v in line.split()]
-
-
 def _formatValue(v):
     return '%0.6f' % v if isinstance(v, float) else str(v)
 
 
 def _getFormatStr(v):
     return '.6f' if isinstance(v, float) else ''
-
-

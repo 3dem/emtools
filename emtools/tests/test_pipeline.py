@@ -54,14 +54,14 @@ class TestThreading(unittest.TestCase):
 
         f1 = pipeline.addProcessor(g.outputQueue, filter,
                              name='FILTER-1')
-        f2 = pipeline.addProcessor(g.outputQueue, filter,
-                             name='FILTER-2',
-                             outputQueue=f1.outputQueue)
-        f3 = pipeline.addProcessor(g.outputQueue, filter,
-                                   name='FILTER-3',
-                                   outputQueue=f1.outputQueue)
-        p = pipeline.addProcessor(f1.outputQueue, picking,
-                            name='PICKING')
+        pipeline.addProcessor(g.outputQueue, filter,
+                              name='FILTER-2',
+                              outputQueue=f1.outputQueue)
+        pipeline.addProcessor(g.outputQueue, filter,
+                              name='FILTER-3',
+                              outputQueue=f1.outputQueue)
+        pipeline.addProcessor(f1.outputQueue, picking,
+                              name='PICKING')
 
         pipeline.run()
 

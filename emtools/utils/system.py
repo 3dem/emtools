@@ -20,6 +20,8 @@ index, name, driver_version, temperature.gpu, utilization.gpu [%], utilization.m
 1, NVIDIA GeForce RTX 3090, 515.65.01, 37, 0 %, 0 %, 24576 MiB, 1 MiB
 """
 
+import socket
+import platform
 from .process import Process
 
 
@@ -30,29 +32,37 @@ class System:
 
     @staticmethod
     def gpus():
-        query = Process(System.NVIDIA_SMI_QUERY[0],
-                        *System.NVIDIA_SMI_QUERY[1:])
         gpus = []
-        for i, line in enumerate(query.lines()):
-            # Use first line as keywords since it is the header
-            if line.strip():
-                if i == 0:
-                    keys = line.split(',')
-                else:
-                    values = line.split(',')
-                    gpus.append({k.strip().split()[0]: v.strip()
-                                 for k, v in zip(keys, values)})
+        query = Process(System.NVIDIA_SMI_QUERY[0],
+                        *System.NVIDIA_SMI_QUERY[1:], doRaise=False)
+
+        if query.returncode == 0:   # no error
+            for i, line in enumerate(query.lines()):
+                # Use first line as keywords since it is the header
+                if line.strip():
+                    if i == 0:
+                        keys = line.split(',')
+                    else:
+                        values = line.split(',')
+                        gpus.append({k.strip().split()[0]: v.strip()
+                                     for k, v in zip(keys, values)})
         return gpus
 
     @staticmethod
     def cpus():
         """ Return number of CPUs in the system, None if can't figure it out."""
-        lscpu = Process('lscpu')
-        cpus = None
+        system = platform.system()
+        cpus = 0
 
-        for line in lscpu.lines():
-            if line.startswith('CPU(s):'):
-                cpus = int(line.split()[1].strip())
+        if system == 'Linux':
+            for line in Process('lscpu').lines():
+                if line.startswith('CPU(s):'):
+                    cpus = int(line.split()[1].strip())
+
+        elif system == 'Darwin':
+            for line in Process('sysctl', '-a').lines():
+                if line.startswith('hw.ncpu:'):
+                    cpus = int(line.split()[1])
 
         return cpus
 
@@ -71,3 +81,7 @@ class System:
                 gpuDict[name]['count'] += 1
         return {'CPUs': System.cpus(),
                 'GPUs': gpuDict}
+
+    @staticmethod
+    def hostname():
+        return socket.gethostname()

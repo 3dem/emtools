@@ -1,0 +1,64 @@
+# This is a basic workflow that is manually triggered
+
+name: Manual testing
+
+# Controls when the action will run. Workflow runs when manually triggered using the UI
+# or API.
+on:
+  workflow_dispatch:
+    # Inputs the workflow accepts.
+    inputs:
+      data-branch:
+        # Friendly description to be shown in the UI instead of 'name'
+        description: 'em-testdata branch'
+        # Default value if no value is explicitly provided
+        default: 'main'
+        # Input has to be provided for the workflow to run
+        required: true
+        # The data type of the input
+        type: string
+      python-version:
+        # Friendly description to be shown in the UI instead of 'name'
+        description: 'Python version'
+        # Default value if no value is explicitly provided
+        default: '3.8'
+        # Input has to be provided for the workflow to run
+        required: true
+        # The data type of the input
+        type: string
+
+# A workflow run is made up of one or more jobs that can run sequentially or in parallel
+jobs:
+  # This workflow contains a single job called "greet"
+  testing:
+    # The type of runner that the job will run on
+    runs-on: ubuntu-latest
+
+    # Steps represent a sequence of tasks that will be executed as part of the job
+    steps:
+    # Runs a single command using the runners shell
+    - uses: actions/checkout@v3
+    - name: Set up Python ${{ inputs.python-version }}
+      uses: actions/setup-python@v3
+      with:
+        python-version: ${{ inputs.python-version }}
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        python -m pip install flake8 pytest
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+    - name: Lint with flake8
+      run: |
+        # stop the build if there are Python syntax errors or undefined names
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+        # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
+        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+    - name: Run tests
+      run: |
+        echo "Cloning from branch ${{ inputs.data-branch }}"
+        git clone https://github.com/3dem/em-testdata.git
+        export EM_TESTDATA=em-testdata 
+        ls -l $EM_TESTDATA
+        python -m unittest emtools.tests.test_metadata
+        python -m unittest emtools.tests.test_utils
+        python -m unittest emtools.tests.test_pipeline
