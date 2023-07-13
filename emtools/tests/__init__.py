@@ -13,5 +13,10 @@ def testpath(*paths):
         return None
     
     p = os.path.abspath(os.path.join(EM_TESTDATA, *paths))
+
+    if not os.path.exists(p):
+        print(">>> Missing path: ", Color.red(p))
+        return None
+
     print(">>> Using path: ",  Color.bold(p))
     return p
