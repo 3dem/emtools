@@ -1,6 +1,6 @@
 # This is a basic workflow that is manually triggered
 
-name: Manual workflow
+name: Manual testing
 
 # Controls when the action will run. Workflow runs when manually triggered using the UI
 # or API.
@@ -10,9 +10,9 @@ on:
     inputs:
       name:
         # Friendly description to be shown in the UI instead of 'name'
-        description: 'Person to greet'
+        description: 'em-testdata branch'
         # Default value if no value is explicitly provided
-        default: 'World'
+        default: 'main'
         # Input has to be provided for the workflow to run
         required: true
         # The data type of the input
@@ -28,7 +28,7 @@ jobs:
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
     # Runs a single command using the runners shell
-    - name: Send greeting
+    - name: Clone em-testdata
       run: |
         echo "Hello ${{ inputs.name }}"
         git clone https://github.com/3dem/em-testdata.git
