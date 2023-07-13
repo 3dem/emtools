@@ -14,7 +14,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest, ubuntu-latest]
+        os: [ubuntu-latest, macos-latest]
         python-version: ["3.8", "3.9", "3.10"]
     runs-on: ${{ matrix.os }}
     steps:
@@ -37,3 +37,5 @@ jobs:
     - name: Run tests
       run: |
         python -m unittest emtools.tests.test_metadata
+        python -m unittest emtools.tests.test_utils
+        python -m unittest emtools.tests.test_pipeline
