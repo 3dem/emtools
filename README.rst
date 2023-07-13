@@ -2,7 +2,7 @@
 emtools
 =======
 
-Basic utilities for CryoEM data manipulation. It is available as a Python module (https://pypi.org/project/emtools).
+Utilities for CryoEM data manipulation.
 
 Installation
 ------------
@@ -24,9 +24,11 @@ Usage
 Testing
 -------
 
-Metadata submodule tests:
+.. code-block:: bash
 
-``python -m unittest emtools.tests.test_metadata``
+    python -m unittest emtools.tests.test_utils
+    python -m unittest emtools.tests.test_metadata
+    python -m unittest emtools.tests.test_pipeline
 
 How to cite
 -----------
@@ -36,7 +38,8 @@ Please cite the code repository DOI: xxx
 Authors
 -------
 
- * Jose Miguel de la Rosa-Trevín, Department of Biochemistry and Biophysics, Science for Life Laboratory, Stockholm University, Stockholm, Sweden
+ * Jose Miguel de la Rosa-Trevín, St.Jude Children's Research Hospital, Memphis, TN
+
 
  
 
