@@ -34,4 +34,5 @@ jobs:
         git clone https://github.com/3dem/em-testdata.git
         du -csh em-testdata/
         find em-testdata/ -type f | wc -l 
-        export EM_TESTDATA=em-testdata && ls -l $EM_TESTDATA
+        export EM_TESTDATA=em-testdata 
+        ls -l $EM_TESTDATA
