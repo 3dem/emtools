@@ -29,6 +29,7 @@ https://packaging.python.org/en/latest/distributing.html
 https://github.com/pypa/sampleproject
 """
 
+import os
 # Always prefer setuptools over distutils
 from setuptools import setup, find_packages
 # To use a consistent encoding
@@ -42,19 +43,23 @@ here = path.abspath(path.dirname(__file__))
 with open(path.join(here, 'README.rst'), encoding='utf-8') as f:
     long_description = f.read()
 
+# Read requirements.txt
+with open(os.path.join(here, 'requirements.txt')) as f:
+    requirements = f.read().splitlines()
+
 # Arguments marked as "Required" below must be included for upload to PyPI.
 # Fields marked as "Optional" may be commented out.
 
 setup(
     name='emtools',  # Required
     version=emtools.__version__,  # Required
-    description='Basic utilities for CryoEM data manipulation',  # Required
+    description='Utilities for CryoEM data manipulation',  # Required
     long_description=long_description,  # Optional
     url='https://github.com/3dem/emtools',  # Optional
     author='J.M. De la Rosa Trevin, Grigory Sharov',  # Optional
     author_email='delarosatrevin@gmail.com, gsharov@mrc-lmb.cam.ac.uk',  # Optional
     classifiers=[  # Optional
-        'Development Status :: 1 - Planning',
+        'Development Status :: 3 - Alpha',
         'License :: OSI Approved :: GNU General Public License v3 (GPLv3)',
         'Programming Language :: Python :: 3'
     ],
@@ -64,4 +69,6 @@ setup(
         'Bug Reports': 'https://github.com/3dem/emtools/issues',
         'Source': 'https://github.com/3dem/emtools',
     },
+    include_package_data=True,
+    install_requires=requirements
 )

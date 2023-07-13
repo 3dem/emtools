@@ -7,13 +7,14 @@ Utilities for CryoEM data manipulation.
 Installation
 ------------
 
-``pip install emtools``
+.. code-block:: bash
+
+    pip install emtools
 
 Or for development:
 
 .. code-block:: bash
 
-    # Or for development
     git clone git@github.com:3dem/emtools.git
     cd emtools
     pip install -e .
