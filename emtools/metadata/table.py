@@ -264,41 +264,6 @@ class Table(ColumnList):
         for row in self._rows:
             print(formatStr.format(**row._asdict()))
 
-    @staticmethod
-    def iterRows(fileName, key=None, reverse=False, **kwargs):
-        """
-        Convenience method to iterate over the rows of a given table.
-
-        Args:
-            fileName: the input star filename, it might contain the '@'
-                to specify the tableName
-            key: key function to sort elements, it can also be a string that
-                will be used to retrieve the value of the column with that name.
-            reverse: If true reverse the sort order.
-            **kwargs:
-                tableName: can be used explicit instead of @ in the filename.
-                types: It can be a dictionary {columnName: columnType} pairs that
-                    allows to specify types for certain columns in the internal reader
-        """
-        if '@' in fileName:
-            tableName, fileName = fileName.split('@')
-        else:
-            tableName = kwargs.pop('tableName', None)
-
-        # Create a table iterator
-        with open(fileName) as f:
-            reader = _Reader(f, tableName, **kwargs)
-            if key is None:
-                for row in reader:
-                    yield row
-            else:
-                if isinstance(key, str):
-                    keyFunc = lambda r: getattr(r, key)
-                else:
-                    keyFunc = key
-                for row in sorted(reader, key=keyFunc, reverse=reverse):
-                    yield row
-
     def __len__(self):
         return self.size()
 

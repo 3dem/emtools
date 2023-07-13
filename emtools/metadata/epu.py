@@ -134,7 +134,7 @@ class EPU:
                 _backup(fn)
             if os.path.exists(outputStar):
                 os.remove(outputStar)
-            data = EPU.Data(inputDir, backupFolder)
+            data = EPU.Data(inputDir, inputDir, epuStar=outputStar)
             for i, m in enumerate(movies):
                 movieFn, movieStat = m
                 data.addMovie(_rel(movieFn), movieStat)
@@ -188,11 +188,11 @@ class EPU:
         return loc
 
     class Data:
-        def __init__(self, dataFolder, epuFolder):
+        def __init__(self, dataFolder, epuFolder, epuStar=None):
             self._acq = None
             self._dataFolder = dataFolder
             self._epuFolder = epuFolder
-            self._epuStar = os.path.join(self._epuFolder, 'movies.star')
+            self._epuStar = epuStar or os.path.join(self._epuFolder, 'movies.star')
 
             if os.path.exists(self._epuStar):
                 with StarFile(self._epuStar) as sf:

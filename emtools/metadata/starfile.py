@@ -284,6 +284,9 @@ class StarFile(AbstractContextManager):
             self._file = None
 
     # ---------------------- Writer functions --------------------------------
+    def writeLine(self, line):
+        self._file.write(f"{line}\n")
+
     def _writeTableName(self, tableName):
         self._file.write("\ndata_%s\n\n" % (tableName or ''))
 
