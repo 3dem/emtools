@@ -37,12 +37,6 @@ jobs:
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
     # Runs a single command using the runners shell
-    - name: Clone em-testdata
-      run: |
-        echo "Hello ${{ inputs.data-branch }}"
-        git clone https://github.com/3dem/em-testdata.git
-        du -csh em-testdata/
-        find em-testdata/ -type f | wc -l 
     - uses: actions/checkout@v3
     - name: Set up Python ${{ inputs.python-version }}
       uses: actions/setup-python@v3
@@ -61,6 +55,8 @@ jobs:
         flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
     - name: Run tests
       run: |
+        echo "Cloning from branch ${{ inputs.data-branch }}"
+        git clone https://github.com/3dem/em-testdata.git
         export EM_TESTDATA=em-testdata 
         ls -l $EM_TESTDATA
         python -m unittest emtools.tests.test_metadata
