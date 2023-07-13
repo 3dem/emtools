@@ -20,11 +20,12 @@ import argparse
 import ast
 import time
 from collections import OrderedDict
+import datetime as dt
 from glob import glob
 from pprint import pprint
 
 from emtools.utils import Process, Color, System, Pipeline, Timer
-from emtools.metadata import EPU, SqliteFile
+from emtools.metadata import EPU, SqliteFile, StarFile, Table
 
 import pyworkflow as pw
 from pyworkflow.project import Project
@@ -42,6 +43,7 @@ OUT_PART = 'outputParticles'
 # Some global workflow parameters
 params = {}
 OTF_FILE = 'scipion-otf.json'
+cwd = os.getcwd()
 
 
 def _setPointer(pointer, prot, extended):
@@ -103,6 +105,54 @@ def run2DPipeline(wf, protExtract):
           f"{Color.bold(protExtract.getRunName())}")
 
     otf = load_otf()
+
+    def _createBatch2D(gridsquare, subsetParts):
+        rangeStr = f"{subsetParts[0].getObjId()} - {subsetParts[-1].getObjId()}"
+        print(f"Creating subset with range: {rangeStr}")
+        protSubset = wf.createProtocol(
+            'pwem.protocols.ProtUserSubSet',
+            objLabel=f'subset: {gridsquare} : {rangeStr}',
+        )
+        _setPointer(protSubset.inputObject, protExtract, OUT_PART)
+        wf.saveProtocol(protSubset)
+        protSubset.makePathsAndClean()
+        # Create subset particles as output for the protocol
+        inputParticles = protExtract.outputParticles
+        outputParticles = protSubset._createSetOfParticles()
+        outputParticles.copyInfo(inputParticles)
+        for particle in subsetParts:
+            outputParticles.append(particle)
+        protSubset._defineOutputs(outputParticles=outputParticles)
+        protSubset._defineTransformRelation(inputParticles, outputParticles)
+        protSubset.setStatus(STATUS_FINISHED)
+        wf.project._storeProtocol(protSubset)
+
+        protRelion2D = wf.createProtocol(
+            'relion.protocols.ProtRelionClassify2D',
+            objLabel=f'relion2d: {gridsquare}',
+            maskDiameterA=round(params['partSizeA'] * 1.5),
+            numberOfClasses=200,
+            extraParams='--maxsig 50',
+            pooledParticles=50,
+            doGpu=True,
+            gpusToUse=','.join(str(g) for g in params['cls2dGpus']),
+            numberOfThreads=32,
+            numberOfMpi=1,
+            allParticlesRam=True,
+            useGradientAlg=True,
+        )
+
+        _setPointer(protRelion2D.inputParticles, protSubset, OUT_PART)
+        wf.saveProtocol(protRelion2D)
+        otf['2d'][gridsquare] = {
+            'runId': protRelion2D.getObjId(),
+            'runName': protRelion2D.getRunName(),
+            'runDir': protRelion2D.getWorkingDir()
+        }
+        save_otf(otf)
+
+        return {'gs': gridsquare, 'prot': protRelion2D}
+
     def _generate2D():
         """ Generated subset of 2D from the outputParticles from extract protocol.
         Subsets will be created based on the GridSquare of the micrographs. """
@@ -133,8 +183,14 @@ def run2DPipeline(wf, protExtract):
             parts = SetOfParticles(filename=tmpSqliteFn)
             subsetParts = []
 
-            print(f"Total particles: {parts.getSize()}")
+            md = dt.datetime.fromtimestamp(mt)
+            td = dt.datetime.now() - md
+            minutes = td.days * 1440 + td.seconds // 60
+            print(f"Total particles: {parts.getSize()}, updated: {md} ({minutes} minutes ago)")
 
+            newGrid = False
+
+            # Find if there is a new subset of particles to launch a new 2D batch
             for i, p in enumerate(parts.iterItems()):
                 if i < lastParticleIndex:
                     continue
@@ -142,67 +198,38 @@ def run2DPipeline(wf, protExtract):
                 micName = p.getCoordinate().getMicName()
                 loc = EPU.get_movie_location(micName)
 
-                print(f"Checking particle {p.getObjId()}, gs: {loc['gs']}")
                 if loc['gs'] != lastGs:  # We found a new GridSquare
-                    print(f"Found new GS {loc['gs']}, old one: {lastGs}")
+
                     oldLastGs = lastGs
                     lastGs = loc['gs']
-                    # Let's check that is not the first one
                     if oldLastGs:
-                        rangeStr = f"{subsetParts[0].getObjId()} - {subsetParts[-1].getObjId()}"
-                        print(f"Creating subset with range: {rangeStr}")
-                        protSubset = wf.createProtocol(
-                            'pwem.protocols.ProtUserSubSet',
-                            objLabel=f'subset: {oldLastGs} : {rangeStr}',
-                        )
-                        _setPointer(protSubset.inputObject, protExtract, OUT_PART)
-                        wf.saveProtocol(protSubset)
-                        protSubset.makePathsAndClean()
-                        # Create subset particles as output for the protocol
-                        inputParticles = protExtract.outputParticles
-                        outputParticles = protSubset._createSetOfParticles()
-                        outputParticles.copyInfo(inputParticles)
-                        for particle in subsetParts:
-                            outputParticles.append(particle)
-                        protSubset._defineOutputs(outputParticles=outputParticles)
-                        protSubset._defineTransformRelation(inputParticles, outputParticles)
-                        protSubset.setStatus(STATUS_FINISHED)
-                        wf.project._storeProtocol(protSubset)
-
-                        protRelion2D = wf.createProtocol(
-                            'relion.protocols.ProtRelionClassify2D',
-                            objLabel=f'relion2d: {oldLastGs}',
-                            maskDiameterA=round(params['partSizeA'] * 1.5),
-                            numberOfClasses=200,
-                            extraParams='--maxsig 50',
-                            pooledParticles=50,
-                            doGpu=True,
-                            gpusToUse=','.join(str(g) for g in params['cls2dGpus']),
-                            numberOfThreads=32,
-                            numberOfMpi=1,
-                            allParticlesRam=True,
-                            useGradientAlg=True,
-                        )
-
-                        _setPointer(protRelion2D.inputParticles, protSubset, OUT_PART)
-                        wf.saveProtocol(protRelion2D)
-                        otf['2d'][oldLastGs] = {
-                            'runId': protRelion2D.getObjId(),
-                            'runName': protRelion2D.getRunName(),
-                            'runDir': protRelion2D.getWorkingDir()
-                        }
-                        save_otf(otf)
-
-                        yield {'gs': oldLastGs, 'prot': protRelion2D}
-                        lastParticleIndex = i
-                        print(f"lastGs: {lastGs}, lastParticleIndex: {lastParticleIndex}")
+                        newGrid = True
                         break
 
                 subsetParts.append(p.clone())
 
+            launchGs = None
+            nParts = len(subsetParts)
+            if newGrid:
+                launchGs = oldLastGs
+                print(f"Found new GS {lastGs}, old one: {oldLastGs}")
+            elif td.days or td.seconds > 3600:  # There is some time with no new particles, 1h
+                print(f"Some time without particles change. ")
+                launchGs = lastGs
+
+            if launchGs and nParts > 1:
+                print(f"Launching 2D batch for GS: {launchGs} with "
+                      f"{nParts} particles, lastParticleIndex: {lastParticleIndex}")
+                yield _createBatch2D(launchGs, subsetParts)
+                write_stars(cwd)
+                lastParticleIndex = i
+            else:
+                if td.days or td.seconds > 18000:  # There is some time with no new particles, 5h
+                    print("Not much to do, just quitting 2D batch generation")
+                    break
+
             lastMt = mt
 
-            # TODO: Check stopping condition (maybe when STREAM closed)
 
     def _run2D(batch):
         protRelion2D = batch['prot']
@@ -240,8 +267,30 @@ def create_project(workingDir):
     def _path(*p):
         return os.path.join(workingDir, *p)
 
-    with open(_path('relion_it_options.py')) as f:
-        opts = OrderedDict(ast.literal_eval(f.read()))
+    """
+        {"acquisition": {"voltage": 200, "magnification": 79000, "pixel_size": 1.044, "dose": 1.063, "cs": 2.7}}
+    """
+
+    scipionOptsFn = _path('scipion_otf_options.json')
+    relionOptsFn = _path('relion_it_options.py')
+
+    if os.path.exists(scipionOptsFn):
+        with open(scipionOptsFn) as f:
+            opts = json.load(f)
+
+    elif os.path.exists(relionOptsFn):
+        with open(_path('relion_it_options.py')) as f:
+            relionOpts = OrderedDict(ast.literal_eval(f.read()))
+            opts = {'acquisition': {
+                'voltage': relionOpts['prep__importmovies__kV'],
+                'pixel_size': relionOpts['prep__importmovies__angpix'],
+                'cs': relionOpts['prep__importmovies__Cs'],
+                'magnification': 130000,
+                'dose': relionOpts['prep__motioncorr__dose_per_frame']
+            }}
+
+    acq = opts['acquisition']
+    picking = opts.get('picking', {})
 
     wf = Workflow(project)
 
@@ -254,13 +303,13 @@ def create_project(workingDir):
         filesPath=moviesFolder,
         filesPattern=moviesPattern,
         samplingRateMode=0,
-        samplingRate=opts['prep__importmovies__angpix'],
+        samplingRate=acq['pixel_size'],
         magnification=130000,
         scannedPixelSize=7.0,
-        voltage=opts['prep__importmovies__kV'],
-        sphericalAberration=opts['prep__importmovies__Cs'],
+        voltage=acq['voltage'],
+        sphericalAberration=acq['cs'],
         doseInitial=0.0,
-        dosePerFrame=opts['prep__motioncorr__dose_per_frame'],
+        dosePerFrame=acq['dose'],
         gainFile="gain.mrc",
         dataStreaming=True
     )
@@ -287,6 +336,17 @@ def create_project(workingDir):
     _setPointer(protCTF.inputMicrographs, protMc, OUT_MICS)
     wf.launchProtocol(protCTF, wait={OUT_CTFS: 16})
 
+    protCryoloImport = None
+    cryoloInputModelFrom = 0  # General model (low-pass filtered)
+    if 'cryolo_model' in picking:
+        protCryoloImport = wf.createProtocol(
+            'sphire.protocols.SphireProtCryoloImport',
+            objLabel='import cryolo model',
+            modelPath=picking['cryolo_model']
+        )
+        wf.launchProtocol(protCryoloImport, wait=True)
+        cryoloInputModelFrom = 2  # Other
+
     protCryolo = wf.createProtocol(
         'sphire.protocols.SphireProtCRYOLOPicking',
         objLabel='cryolo picking',
@@ -298,8 +358,13 @@ def create_project(workingDir):
         streamingBatchSize=16,
         streamingSleepOnWait=60,
         numberOfThreads=1,
+        inputModelFrom=cryoloInputModelFrom
     )
     _setPointer(protCryolo.inputMicrographs, protMc, OUT_MICS)
+
+    if protCryoloImport:
+        _setPointer(protCryolo.inputModel, protCryoloImport, 'outputModel')
+
     wf.launchProtocol(protCryolo, wait={OUT_COORD: 100})
 
     calculateBoxSize(protCryolo)
@@ -392,6 +457,116 @@ def restart_rankers(workingDir):
                 print("\r     Done!")
 
 
+def write_micrographs_star(micStarFn, ctfs):
+    firstCtf = ctfs.getFirstItem()
+    firstMic = firstCtf.getMicrograph()
+    # firstCtf.printAll()
+    acq = firstMic.getAcquisition()
+
+    with StarFile(micStarFn, 'w') as sf:
+        optics = Table(['rlnOpticsGroupName',
+                        'rlnOpticsGroup',
+                        'rlnMicrographOriginalPixelSize',
+                        'rlnVoltage',
+                        'rlnSphericalAberration',
+                        'rlnAmplitudeContrast',
+                        'rlnMicrographPixelSize'])
+        ps = firstMic.getSamplingRate()
+        op = 1
+        opName = f"opticsGroup{op}"
+        optics.addRowValues(opName, op, ps,
+                            acq.getVoltage(),
+                            acq.getSphericalAberration(),
+                            acq.getAmplitudeContrast(),
+                            ps)
+
+        sf.writeLine("# version 30001")
+        sf.writeTable('optics', optics)
+
+        mics = Table(['rlnMicrographName',
+                      'rlnOpticsGroup',
+                      'rlnCtfImage',
+                      'rlnDefocusU',
+                      'rlnDefocusV',
+                      'rlnCtfAstigmatism',
+                      'rlnDefocusAngle',
+                      'rlnCtfFigureOfMerit',
+                      'rlnCtfMaxResolution',
+                      'rlnMicrographMovieName'])
+        sf.writeLine("# version 30001")
+        sf.writeHeader('micrographs', mics)
+
+        for ctf in ctfs:
+            mic = ctf.getMicrograph()
+            u, v, a = ctf.getDefocus()
+            micName = mic.getMicName()
+            movName = os.path.join('data', 'Images-Disc1',
+                                   micName.replace('_Data_FoilHole_',
+                                                   '/Data/FoilHole_'))
+            row = mics.Row(mic.getFileName(), op,
+                           ctf.getPsdFile(),
+                           u, v, abs(u - v), a,
+                           ctf.getFitQuality(),
+                           ctf.getResolution(),
+                           movName)
+
+            sf.writeRow(row)
+
+
+def write_coordinates(micStarFn, prot):
+    coords = prot.outputCoordinates
+    outputCoords = 'Coordinates'
+    Process.system(f'rm -rf {outputCoords} && mkdir {outputCoords}')
+    coordsMicTable = Table(['rlnMicrographName', 'rlnMicrographCoordinates'])
+    coordsTable = Table(['rlnCoordinateX', 'rlnCoordinateY'])
+    micIds = set()
+    micDict = {mic.getObjId(): mic.getFileName()
+               for mic in prot.getInputMicrographs()}
+
+    sf = None
+
+    for coord in coords.iterItems(orderBy='_micId', direction='ASC'):
+        micId = coord.getMicId()
+        if micId not in micIds:
+            micIds.add(micId)
+            micFn = micDict[micId]
+            micBase = os.path.basename(micFn).replace('.mrc', '')
+            micCoords = f"{outputCoords}/{micBase}_coordinates.star"
+            coordsMicTable.addRowValues(micFn, micCoords)
+
+            if sf:
+                sf.close()
+            sf = StarFile(micCoords, 'w')
+            sf.writeLine('# version 30001')
+            sf.writeHeader('', coordsTable)
+        sf.writeRow(coordsTable.Row(coord.getX(), coord.getY()))
+
+    if sf:
+        sf.close()
+
+    with StarFile(micStarFn, 'w') as sf:
+        sf.writeLine('# version 30001')
+        sf.writeTable('coordinate_files', coordsMicTable)
+
+
+def write_stars(workingDir):
+    """ Restart one or more protocols. """
+    project = Project(pw.Config.getDomain(), workingDir)
+    project.load()
+    wf = Workflow(project)
+
+    for prot in project.getRuns():
+        clsName = prot.getClassName()
+        if clsName == 'CistemProtCTFFind':
+            ctfs = prot.outputCTF
+            print(f"- {prot.getObjId()}: {prot.getRunName()} ({clsName})")
+            print(f"            CTFs: {ctfs.getSize()}")
+            write_micrographs_star('micrographs_ctf.star', ctfs)
+
+        elif clsName == 'SphireProtCRYOLOPicking':
+            write_coordinates('coordinates.star', prot)
+
+
 def main():
     p = argparse.ArgumentParser(prog='scipion-otf')
     g = p.add_mutually_exclusive_group()
@@ -409,8 +584,10 @@ def main():
     g.add_argument('--clean', action="store_true",
                    help="Clean Scipion project files/folders.")
 
+    g.add_argument('--write_stars', action="store_true",
+                   help="Generate STAR micrographs and particles STAR files.")
+
     args = p.parse_args()
-    cwd = os.getcwd()
 
     if args.create:
         create_project(cwd)
@@ -422,6 +599,8 @@ def main():
         pass  # debugging/testing code
     elif args.clean:
         clean_project(cwd)
+    elif args.write_stars:
+        write_stars(cwd)
     else:  # by default open the GUI
         from pyworkflow.gui.project import ProjectWindow
         ProjectWindow(cwd).show()

@@ -47,9 +47,13 @@ with StarFile(particlesFn) as sf:
     t = sf.getTableInfo('particles')
     with StarFile(outFn, 'w') as out:
         newOpticTable = Table(opticTable.getColumns())
+        addedGroups = set()
         for og in opticGroups.values():
-            newOpticTable.addRow(ogRow._replace(rlnOpticsGroup=og,
-                                                rlnOpticsGroupName='opticsGroup%03d' % og))
+            if og not in addedGroups:
+                ogName = 'opticsGroup%03d' % og
+                newOpticTable.addRow(ogRow._replace(rlnOpticsGroup=og,
+                                                    rlnOpticsGroupName=ogName))
+                addedGroups.add(og)
         out.writeTable('optics', newOpticTable)
         out.writeHeader('particles', t)
         for row in sf.iterTable('particles'):
