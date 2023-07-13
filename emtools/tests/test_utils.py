@@ -41,6 +41,16 @@ class TestTimer(unittest.TestCase):
 
 
 class TestSystem(unittest.TestCase):
-    def test_gpus(self):
-        gpus = System.gpus()
-        pprint(gpus)
+    def test_funcs(self):
+        # Specs
+        specs = System.specs()
+        self.assertTrue('GPUs' in specs)
+        self.assertTrue('CPUs' in specs)
+        self.assertGreater(specs['CPUs'], 0)
+        print(">>> CPUs: ", specs['CPUs'])
+        print(">>> GPUs: ", specs['GPUs'])
+
+        # Hostname
+        h = System.hostname()
+        print(">>> Hostname: ", h)
+        self.assertTrue(bool(h))
