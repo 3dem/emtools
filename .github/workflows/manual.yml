@@ -29,4 +29,7 @@ jobs:
     steps:
     # Runs a single command using the runners shell
     - name: Send greeting
-      run: echo "Hello ${{ inputs.name }}"
+      run: |
+        echo "Hello ${{ inputs.name }}"
+        git clone https://github.com/3dem/em-testdata.git
+        cat em-testdata/README.md
