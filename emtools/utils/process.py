@@ -54,8 +54,9 @@ class Process:
             print(self.stdout)
 
     @staticmethod
-    def system(cmd, only_print=False):
-        print(cmd)
+    def system(cmd, only_print=False, color=None):
+        printCmd = cmd if color is None else color(cmd)
+        print(printCmd)
         if not only_print:
             return os.system(cmd)
 
