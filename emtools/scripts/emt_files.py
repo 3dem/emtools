@@ -18,24 +18,166 @@
 import os
 import time
 import argparse
+from glob import glob
 from datetime import datetime, timedelta
 from pprint import pprint
+import numpy as np
 
-from emtools.utils import Process, Color, Path, Timer
+from emtools.utils import Process, Color, Path, Timer, Pretty
 from emtools.metadata import EPU
+
+
+def statsDir(folder, sort):
+    folders = 0
+    ed = Path.ExtDict()
+    for root, dirs, files in os.walk(folder):
+        folders += len(dirs)
+        for f in files:
+            ed.register(os.path.join(root, f))
+
+    print(f"Folders: {folders}")
+    ed.print(sort)
+
+
+def timeStats(pattern, bin, plot):
+    files = glob(pattern)
+    total_size = 0
+    filesDict = {}
+
+    for f in files:
+        s = os.stat(f)
+        size = s.st_size
+        filesDict[f] = {'size': size,
+                        'ts': s.st_mtime}
+
+        total_size += size
+
+    fs = sorted((f for f in filesDict.items()), key=lambda f: f[1]['ts'])
+    first = fs[0]
+    last = fs[-1]
+
+    if bin:
+        bindelta = timedelta(minutes=bin)
+        start = datetime.fromtimestamp(first[1]['ts'])
+        bins = [{'start': start, 'end': start + bindelta, 'count': 0}]
+        for k, v in fs:
+            last_bin = bins[-1]
+            end = last_bin['end']
+            ts = datetime.fromtimestamp(v['ts'])
+            if ts <= end:
+                last_bin['count'] += 1
+            else:
+                bins.append({'start': end,
+                             'end': end + bindelta,
+                             'count': 1})
+
+    print(f"Files: {len(files)}")
+    print(f"Total size: {Pretty.size(total_size)}")
+    print(f"Average size: {Pretty.size(round(total_size / len(files)))}")
+
+    def _print(label, f):
+        print(f"{label}: \n\tPath: {f[0]}\n\t"
+              f"Date: {Pretty.timestamp(f[1]['ts'])}\n\t"
+              f"Size: {Pretty.size(f[1]['size'])}")
+
+    _print("First", first)
+    _print("Last", last)
+    n = len(bins)
+    delta = datetime.fromtimestamp(last[1]['ts']) - datetime.fromtimestamp(first[1]['ts'])
+    counts = [b['count'] for b in bins]
+    avg = np.mean(counts[:-1]) if n > 1 else counts[0]
+    print(f"Total time: {Pretty.delta(delta)}")
+    print(f"      Bins: {counts}")
+    print(f"       Avg: {avg}")
+
+    if plot:
+        import matplotlib.pyplot as plt
+        width = 1
+        x = np.arange(width, width * (n + 1), width)
+        labels = []
+
+        def _addDt(b, onlyTime=False):
+            dts = Pretty.datetime(b['start'])
+            if onlyTime:
+                labels.append(dts.split()[1])
+            else:
+                labels.append(dts.replace(' ', '\n'))
+
+        _addDt(bins[0])
+        last_date = bins[0]['start']
+
+        for b in bins[1:-1]:
+            start = b['start']
+            if start.day > last_date.day:
+                _addDt(b)
+                last_date = start
+            elif start.hour >= last_date.hour + 4:
+                _addDt(b, onlyTime=True)
+                last_date = start
+            else:
+                labels.append('')
+        _addDt(bins[-1])
+        values = [b['count'] for b in bins]
+        fig, ax = plt.subplots(figsize=(24, 8))
+        w = width * 0.9
+        ax.bar(x + w / 2, values, w, label='Men')
+        # Add some text for labels, title and custom x-axis tick labels, etc.
+        ax.set_ylabel('Files')
+        ax.set_title(f'Files generated every {bin} minutes')
+        ax.set_xticks(x)
+        ax.set_xticklabels(labels)
+        last_i = None
+        annot = ax.annotate("", xy=(0, 0), xytext=(5, 5), textcoords="offset points")
+        annot.set_visible(False)
+
+        def hover(event):
+            nonlocal last_i
+            x, y = event.xdata, event.ydata
+            if x and y and 1 < x < n + 1:
+                i = int(x) - 1
+                b = bins[i]
+                if i != last_i:
+                    ss = Pretty.datetime(b['start'])
+                    es = Pretty.datetime(b['end'])
+                    msg = f"{i}: {ss} - {es.split()[1]}"
+                    # print(msg)
+                    last_i = i
+            else:
+                last_i = None
+                annot.set_visible(False)
+
+        fig.canvas.mpl_connect("motion_notify_event", hover)
+
+        plt.show()
 
 
 def main():
     p = argparse.ArgumentParser(prog='emt-files')
     g = p.add_mutually_exclusive_group()
-    g.add_argument('--copy', nargs=3, metavar=('SRC', 'DST', 'delay'),
-                   help='Copy files from SRC ot DST with certain delay')
-    g.add_argument('--transfer', nargs=3, metavar=('FRAMES', 'RAW', 'EPU'),
-                   help='Transfer (move) files from SRC to DST')
-    g.add_argument('--parse', metavar='DIR',
-                   help='Parse and print file stats from DIR')
-    g.add_argument('--epu', nargs=2, metavar=('SRC', 'DST'),
-                   help="Parse EPU input folder and makes a backup")
+    g.add_argument('--stats', metavar='FOLDER',
+                   help="Statistics of some files given a pattern or from "
+                        "a folder.")
+    g.add_argument('--timing', metavar='PATTERN',
+                   help="Compute histogram from the timestamps of files "
+                        "matching the pattern.")
+    g.add_argument('--copy_dir', nargs=2, metavar=('SRC_DIR', 'NEW_DIR'),
+                   help='Copy directory with some delay')
+    g.add_argument('--check_dirs', nargs=2, metavar=('DIR1', 'DIR2'),
+                   help='Check if the two directories are synchronized. ')
+
+    p.add_argument('--bin', '-b', type=int, default=6000,
+                   help="Create bins of the given time in minutes "
+                        "(with --timing)")
+    p.add_argument('--plot', '-p', action='store_true',
+                   help="Plot the number of files per bin  "
+                        "(with --stats)")
+    p.add_argument('--delay', '-d', type=float, default=0,
+                   help="Delay in seconds when copying files "
+                        "(with --copy_dir)")
+    p.add_argument('--sort', choices=['count', 'size'],
+                   help="Sort results from --stats with a folder"
+                        "based on count or size (with --stats FOLDER)")
+
     args = p.parse_args()
 
     def _checkdirs(*dirs):
@@ -43,23 +185,21 @@ def main():
             if not os.path.exists(d):
                 print("ERROR: Missing dir: " + Color.red(d))
 
-    if args.copy:
-        src, dst, delayStr = args.copy
-        delay = float(delayStr)
+    if folder := args.stats:
+        statsDir(folder, args.sort)
 
-        _checkdirs(src, dst)
-        files = []
-        def _append(srcFile, dstFile, **kwargs):
-            s = os.stat(srcFile)
-            files.append((s, srcFile, dstFile))
-        Path.copyDir(src, dst, _append)
-        files.sort(key=lambda f: f[0].st_mtime)
-        t = Timer()
-        for _, srcFile, dstFile in files:
-            t.tic()
-            Path.copyFile(srcFile, dstFile, sleep=delay)
-            t.toc()
+    elif dirs := args.copy_dir:
+        Path.copyDir(dirs[0], dirs[1], sleep=args.delay)
 
+    elif dirs := args.check_dirs:
+        sync = Path.inSync(dirs[0], dirs[1], verbose=True)
+        s = Color.green('in SYNC') if sync else Color.red('NOT in SYNC')
+        print(f"Dirs are {s}")
+
+    elif pattern := args.timing:
+        timeStats(pattern, args.bin, args.plot)
+
+    # TODO: check from here
     elif args.transfer:
         frames, raw, epu = args.transfer
         td = timedelta(minutes=1)
@@ -108,12 +248,6 @@ def main():
                 if os.path.isfile(fn):
                     ed.register(os.path.join(root, f))
         ed.print()
-    #
-    # elif args.epu:
-    #     inEPU, outEPU = args.epu
-    #     epuStar = os.path.join(outEPU, 'movies.star')
-    #     info = EPU.parse_session(inEPU, outputStar=epuStar, backupFolder=outEPU)
-    #     pprint(info)
 
 
 if __name__ == '__main__':
