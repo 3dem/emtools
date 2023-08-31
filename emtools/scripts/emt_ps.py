@@ -21,8 +21,9 @@ import argparse
 from emtools.utils import Process, Color
 
 
-if __name__ == '__main__':
-    p = argparse.ArgumentParser(prog='emt-ps')
+def main():
+    p = argparse.ArgumentParser(prog='emt-ps',
+                                help="xxx")
     p.add_argument('program', default='', nargs='?',
                    help="Program name to check running processes")
     p.add_argument('--folder', '-f',
@@ -50,3 +51,5 @@ if __name__ == '__main__':
                     pass
 
 
+if __name__ == '__main__':
+    main()

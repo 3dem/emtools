@@ -25,8 +25,8 @@ from emtools.utils import Process, Color, Path, Timer
 from emtools.metadata import EPU
 
 
-if __name__ == '__main__':
-    p = argparse.ArgumentParser(prog='emt-files.py')
+def main():
+    p = argparse.ArgumentParser(prog='emt-files')
     g = p.add_mutually_exclusive_group()
     g.add_argument('--copy', nargs=3, metavar=('SRC', 'DST', 'delay'),
                    help='Copy files from SRC ot DST with certain delay')
@@ -81,9 +81,9 @@ if __name__ == '__main__':
                     dstEpuFile = dstFile.replace(raw, epu)
                     dstEpuDir = os.path.dirname(dstEpuFile)
                     if not os.path.exists(dstEpuDir):
-                        Process.system(f'mkdir -p {dstEpuDir}')
-                    Process.system(f'cp {srcFile} {dstEpuFile}')
-                Process.system(f'rsync -ac --remove-source-files {srcFile} {dstFile}')
+                        Process.system(f'mkdir -p "{dstEpuDir}"')
+                    Process.system(f'cp "{srcFile}" "{dstEpuFile}"')
+                Process.system(f'rsync -ac --remove-source-files "{srcFile}" "{dstFile}"')
 
         sync = False
         while not sync:
@@ -104,12 +104,18 @@ if __name__ == '__main__':
         ed = Path.ExtDict()
         for root, dirs, files in os.walk(args.parse):
             for f in files:
-                ed.register(os.path.join(root, f))
+                fn = os.path.join(root, f)
+                if os.path.isfile(fn):
+                    ed.register(os.path.join(root, f))
         ed.print()
+    #
+    # elif args.epu:
+    #     inEPU, outEPU = args.epu
+    #     epuStar = os.path.join(outEPU, 'movies.star')
+    #     info = EPU.parse_session(inEPU, outputStar=epuStar, backupFolder=outEPU)
+    #     pprint(info)
 
-    elif args.epu:
-        inEPU, outEPU = args.epu
-        epuStar = os.path.join(outEPU, 'movies.star')
-        info = EPU.parse_session(inEPU, outputStar=epuStar, backupFolder=outEPU)
-        pprint(info)
+
+if __name__ == '__main__':
+    main()
 

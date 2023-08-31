@@ -113,7 +113,7 @@ def make_groups(inputStar, outputStar, distance=0.005):
 
 
 def main():
-    parser = argparse.ArgumentParser(prog='emt-beamshifts')
+    parser = argparse.ArgumentParser(prog='emt_beamshifts')
     g = parser.add_mutually_exclusive_group()
     g.add_argument('--parse', metavar='XML_ROOT_FOLDER',
                    help="Parse beam shifts from this root folder for all "

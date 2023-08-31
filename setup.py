@@ -70,5 +70,13 @@ setup(
         'Source': 'https://github.com/3dem/emtools',
     },
     include_package_data=True,
-    install_requires=requirements
+    install_requires=requirements,
+    entry_points={  # Optional
+       'console_scripts': [
+           'emt-ps = emtools.scripts.emt_ps:main',
+           'emt-files = emtools.scripts.emt_files:main',
+           'emt-epu-parse = emtools.scripts.emt_epu_parse:main',
+           'emt-beamshifts = emtools.scripts.emt_beamshifts:main'
+       ],
+    },
 )
