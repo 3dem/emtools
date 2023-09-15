@@ -16,34 +16,69 @@
 # **************************************************************************
 
 import os
+import sys
 import argparse
+from pprint import pprint
 
-from emtools.utils import Process, Color
+from emtools.utils import Process, Color, System
 
 
 def main():
     p = argparse.ArgumentParser(prog='emt-ps',
-                                help="xxx")
-    p.add_argument('program', default='', nargs='?',
+                                description="Utility script to monitor programs execution.")
+
+    p.add_argument('--specs', '-s', action='store_true',
+                   help='Print out this machine hardware specifications.')
+    p.add_argument('--name', '-n',
                    help="Program name to check running processes")
     p.add_argument('--folder', '-f',
                    help='Folder to check where the processes are running')
     p.add_argument('--kill', '-k', action='store_true',
                    help='Kill matching processes')
+    p.add_argument('--children', '-c', action='store_true',
+                   help='Include also children processes together with '
+                        'matching processes.')
+    p.add_argument('--verbose', '-v', action='count', default=0,
+                   help='More verbose outputs.')
+
     args = p.parse_args()
+
+    specs = System.specs()
+    cpus = specs['CPUs']
+
+    if args.specs:
+        pprint(specs)
+        sys.exit(0)
+
+    v = args.verbose
 
     kill = args.kill
     folderPath = os.path.abspath(args.folder) if args.folder else args.folder
     print('path', folderPath)
-    processes = Process.ps(args.program, workingDir=folderPath)
+    processes = Process.ps(args.name, workingDir=folderPath, children=args.children)
 
     color = Color.red if kill else Color.bold
 
     for folder, procs in processes.items():
-        print(f"{Color.warn(folder)}")
+        print(Color.warn(f"{folder}"))
+        header = f"     {'USER':<15} {'PPID/PID':<15} {color('PROGRAM'):<30}"
+        if v > 0:
+            header += f" {'CPU(%)':>10} {'MEMORY(%)':>10}"
+            if v > 1:
+                header += f" {'COMMAND LINE'}"
+
+        print(Color.bold(header))
+
         prefix = 'Killing' if kill else ''
         for p in procs:
-            print(f"   {p.info['username']} - {prefix} {color(p.info['name']):<30} {p.cmdline()}")
+            pidstr = f"{p.info['ppid']}/{p.pid}"
+            msg = f"   {prefix}  {p.info['username']:<15} {pidstr:<15} {color(p.info['name']):<30}"
+            if v > 0:
+                cpu_percent = p.cpu_percent(interval=1) / cpus
+                msg += f" {cpu_percent:>10,.2f} {p.info['memory_percent']:>10,.2f}"
+                if v > 1:
+                    msg += f" {p.cmdline()}"
+            print(msg)
             if kill:
                 try:
                     p.kill()

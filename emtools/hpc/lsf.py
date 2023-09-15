@@ -61,7 +61,7 @@ def get_users(queue=None, user=None):
 def print_users(users):
     """ Print the list of users. """
     headers = ["USER", "JOBID", "STAT", "QUEUE", "EXEC_HOST"]
-    format = u'{:<15}{:<15}{:<5}{:<15}{:<30}'
+    format = u'{:<20}{:<15}{:<5}{:<15}{:<30}'
 
     print(format.format(*headers))
 
@@ -106,44 +106,53 @@ def show_queues(queuePattern):
     queues = get_queues(queuePattern)
 
     for q in queues:
-        usersdict = get_users(q)
-        nodes = nodes_from_users(usersdict)
         args = ["bqueues", "-l", q]
-        print_args(args)
-        for line in Process(*args).lines():
-            if 'HOSTS' in line:
-                parts = line.split()
-                for p in parts[1:]:
-                    reserve = p.split('+')[0].replace('/', '')
-                    args = ["bhosts", '-o',
-                            'host_name:20 status: max:5 run:5', reserve]
-                    print_args(args)
-                    for line2 in Process(*args).lines():
-                        if 'HOST_NAME' in line2:
-                            print(line2 + '\tUSERS')
-                        elif line2:
-                            parts = line2.split()
-                            users = nodes.get(parts[0], [])
-                            if users:
-                                line2 += f'\t{" ".join(users)}'
-                            if 'closed' in parts[1]:
-                                line2 = Color.red(line2)
-                            elif int(parts[3]) > 0:
-                                line2 = Color.warn(line2)
-                            print(line2)
+        proc = Process(*args, doRaise=False)
+
+        if proc.returncode == 0:
+            usersdict = get_users(q)
+            nodes = nodes_from_users(usersdict)
+
+            for line in proc.lines():
+                if 'HOSTS' in line:
+                    parts = line.split()
+                    for p in parts[1:]:
+                        reserve = p.split('+')[0].replace('/', '')
+                        args = ["bhosts", '-o',
+                                'host_name:20 status: max:5 run:5', reserve]
+                        print_args(args)
+                        for line2 in Process(*args).lines():
+                            if 'HOST_NAME' in line2:
+                                print(line2 + '\tUSERS')
+                            elif line2:
+                                parts = line2.split()
+                                users = nodes.get(parts[0], [])
+                                if users:
+                                    line2 += f'\t{" ".join(users)}'
+                                if 'closed' in parts[1]:
+                                    line2 = Color.red(line2)
+                                elif int(parts[3]) > 0:
+                                    line2 = Color.warn(line2)
+                                print(line2)
 
 
 def show_jobs(queue=None, user=None):
-    def _print_sorted(users):
+    def _print_sorted(**kwargs):
+        if queue := kwargs.get('queue', None):
+            args = ["bqueues", "-l", queue]
+            proc = Process(*args, doRaise=False)
+            if proc.returncode != 0:
+                return
+        users = get_users(**kwargs)
         print(Color.bold("\n>>> JOBS: "))
         sorted_users = sorted(users.items(), key=lambda u: len(u[1]), reverse=True)
         print_users(sorted_users)
 
     if user:
-        _print_sorted(get_users(queue=None, user=user))
+        _print_sorted(queue=None, user=user)
     else:
         queues = get_queues(queue)
         for q in queues:
-            _print_sorted(get_users(queue=q))
+            _print_sorted(queue=q)
 
 

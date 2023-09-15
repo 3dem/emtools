@@ -24,19 +24,15 @@ from pprint import pprint
 import numpy as np
 
 from emtools.utils import Process, Color, Path, Timer, Pretty
-from emtools.metadata import EPU
+from emtools.metadata import EPU, DataFiles
 
 
 def statsDir(folder, sort):
-    folders = 0
-    ed = Path.ExtDict()
-    for root, dirs, files in os.walk(folder):
-        folders += len(dirs)
-        for f in files:
-            ed.register(os.path.join(root, f))
 
-    print(f"Folders: {folders}")
-    ed.print(sort)
+    df = DataFiles(lambda fn: fn.endswith('fractions.tiff'))
+    df.scan(folder)
+    df.print(sort=sort)
+    df.counters[1].print('movie')
 
 
 def timeStats(pattern, bin, plot):
@@ -154,9 +150,8 @@ def timeStats(pattern, bin, plot):
 def main():
     p = argparse.ArgumentParser(prog='emt-files')
     g = p.add_mutually_exclusive_group()
-    g.add_argument('--stats', metavar='FOLDER',
-                   help="Statistics of some files given a pattern or from "
-                        "a folder.")
+    g.add_argument('--stats', '-s', metavar='FOLDER',
+                   help="Statistics of the files in a given folder.")
     g.add_argument('--timing', metavar='PATTERN',
                    help="Compute histogram from the timestamps of files "
                         "matching the pattern.")
