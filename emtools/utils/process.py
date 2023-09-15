@@ -61,22 +61,33 @@ class Process:
             return os.system(cmd)
 
     @staticmethod
-    def ps(program, workingDir=None):
+    def ps(program, workingDir=None, children=False):
         """ Inspect processes matching a given program name.
         Args:
             program: string matching the program name
             workingDir: if not None, filter processes only with that folder as
                 working directory (cwd)
         """
-        processes = {}  # store processes grouped by cwd
+        processes = {}  # store processes grouped by working dir
+        pids = set()
 
-        for proc in psutil.process_iter(['pid', 'name', 'cwd', 'username']):
+        def _addProc(f, proc):
+            if f not in processes:
+                processes[f] = []
+            if proc.pid not in pids:
+                processes[f].append(proc)
+                pids.add(proc.pid)
+
+        attrs = ['pid', 'ppid', 'name', 'cwd', 'username', 'memory_percent', 'cpu_percent']
+        for proc in psutil.process_iter(attrs):
             if not program or program in proc.info['name']:
                 folder = proc.info['cwd']
                 if workingDir is None or folder == workingDir:
-                    if folder not in processes:
-                        processes[folder] = []
-                    processes[folder].append(proc)
+                    _addProc(folder, proc)
+                    if children:
+                        for child in proc.children(recursive=True):
+                            child.info = child.as_dict(attrs)
+                            _addProc(folder, child)
 
         return processes
 
