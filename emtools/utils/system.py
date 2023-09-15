@@ -22,6 +22,7 @@ index, name, driver_version, temperature.gpu, utilization.gpu [%], utilization.m
 
 import socket
 import platform
+import psutil
 from .process import Process
 
 
@@ -67,6 +68,10 @@ class System:
         return cpus
 
     @staticmethod
+    def memory():
+        return psutil.virtual_memory().total // (1024 * 1024 * 1024)  # GiB
+
+    @staticmethod
     def specs():
         """ Make an informative summary of the system specs. """
         gpuDict = {}
@@ -79,8 +84,11 @@ class System:
                 }
             else:
                 gpuDict[name]['count'] += 1
-        return {'CPUs': System.cpus(),
-                'GPUs': gpuDict}
+        return {
+            'CPUs': System.cpus(),
+            'GPUs': gpuDict,
+            'MEM': System.memory()
+        }
 
     @staticmethod
     def hostname():
