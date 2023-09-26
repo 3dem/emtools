@@ -144,8 +144,8 @@ class DataFiles:
                 'duration': duration
             }
 
-    def __init__(self, filters=[]):
-        self._root = None
+    def __init__(self, filters=[], root=None):
+        self.root = root
         self._ed = Path.ExtDict()
         self._total_dirs = 0
         self._index_files = set()
@@ -155,7 +155,7 @@ class DataFiles:
 
     def scan(self, folder):
         """ Scan a folder and register all files recursively. """
-        self._root = folder
+        self.root = folder
 
         for root, dirs, files in os.walk(folder):
             for fn in files:
@@ -165,7 +165,7 @@ class DataFiles:
     def register(self, filename, stat=None):
         """ Register a file, if stat is None it will be calculated. """
         if stat or os.path.exists(filename):
-            fn = filename.replace(self._root, '')
+            fn = filename.replace(self.root, '')
             if fn not in self._index_files:
                 self._index_files.add(fn)
                 stat = stat or os.stat(filename)
@@ -180,8 +180,9 @@ class DataFiles:
     def total_files(self):
         return self.counters[0].total
 
-    def __contains__(self, item):
-        return item in self._index_files
+    def __contains__(self, filename):
+        fn = filename.replace(self.root, '')
+        return fn in self._index_files
 
     def print(self, sort=None):
         self._ed.print(sort=sort)
@@ -193,8 +194,8 @@ class DataFiles:
 
 class MovieFiles(DataFiles):
     """ Extension of DataFiles that counts also movie files. """
-    def __init__(self, moviesSuffix='fractions.tiff'):
-        DataFiles.__init__(self, filters=[self.is_movie])
+    def __init__(self, moviesSuffix='fractions.tiff', **kwargs):
+        DataFiles.__init__(self, filters=[self.is_movie], **kwargs)
         self._moviesSuffix = 'fractions.tiff'
 
     def is_movie(self, fn):
