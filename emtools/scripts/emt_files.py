@@ -28,8 +28,7 @@ from emtools.metadata import EPU, DataFiles
 
 
 def statsDir(folder, sort):
-
-    df = DataFiles(lambda fn: fn.endswith('fractions.tiff'))
+    df = DataFiles(filters=[lambda fn: fn.endswith('fractions.tiff')])
     df.scan(folder)
     df.print(sort=sort)
     df.counters[1].print('movie')
