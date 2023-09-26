@@ -17,7 +17,7 @@
 import os
 from datetime import datetime, timedelta
 
-from emtools.utils import Path
+from emtools.utils import Path, Pretty
 
 
 class Bins:
@@ -100,38 +100,49 @@ class DataFiles:
         that the filter return True.
         """
         def __init__(self, name='', filter_func=None):
-            self._first = None
-            self._first_ts = None
-            self._last = None
-            self._last_ts = None
+            self.first = None
+            self.first_ts = None
+            self.last = None
+            self.last_ts = None
             self.total = 0
             self._filter_func = filter_func
 
         def register(self, fn, stat):
             if self._filter_func is None or self._filter_func(fn):
-                if self._first is None or stat.st_mtime < self._first_ts:
-                    self._first = fn
-                    self._first_ts = stat.st_mtime
-                if self._last is None or stat.st_mtime > self._last_ts:
-                    self._last = fn
-                    self._last_ts = stat.st_mtime
+                if self.first is None or stat.st_mtime < self.first_ts:
+                    self.first = fn
+                    self.first_ts = stat.st_mtime
+                if self.last is None or stat.st_mtime > self.last_ts:
+                    self.last = fn
+                    self.last_ts = stat.st_mtime
 
                 self.total += 1
 
         def print(self, name):
-            if self._first:
-                first_dt = datetime.fromtimestamp(self._first_ts)
+            if self.first:
+                first_dt = datetime.fromtimestamp(self.first_ts)
                 print(f"First {name}: "
-                      f"\n\tpath: {self._first}"
+                      f"\n\tpath: {self.first}"
                       f"\n\ttime: {first_dt}")
-            if self._last:
-                last_dt = datetime.fromtimestamp(self._last_ts)
+            if self.last:
+                last_dt = datetime.fromtimestamp(self.last_ts)
                 print(f"Last {name}: "
-                      f"\n\tpath: {self._last}"
+                      f"\n\tpath: {self.last}"
                       f"\n\ttime: {last_dt}")
 
-            if self._first and self._last_ts:
+            if self.first and self.last_ts:
                 print(f"Duration: {(last_dt - first_dt).seconds / 3600:0.2f} hours")
+
+        def info(self):
+            fts = datetime.fromtimestamp(self.first_ts) if self.first else None
+            lts = datetime.fromtimestamp(self.last_ts) if self.last else None
+            duration = f"{(lts - fts).seconds / 3600:0.2f} hours" if fts and lts else 'None'
+
+            return {
+                'first_ts': str(fts),
+                'last_ts': str(lts),
+                'duration': duration
+            }
 
     def __init__(self, filters=[]):
         self._root = None
@@ -153,7 +164,7 @@ class DataFiles:
 
     def register(self, filename, stat=None):
         """ Register a file, if stat is None it will be calculated. """
-        if os.path.exists(filename):
+        if stat or os.path.exists(filename):
             fn = filename.replace(self._root, '')
             if fn not in self._index_files:
                 self._index_files.add(fn)
@@ -169,29 +180,6 @@ class DataFiles:
     def total_files(self):
         return self.counters[0].total
 
-    def info(self):
-        """ Return a dict with some info """
-
-        if self.total_files == 0:
-            return {}
-
-        def _rowInfo(row):
-            dt = datetime.fromtimestamp(row.timeStamp)
-            return row.timeStamp, dt, row.movieBaseName
-
-        firstTs, firstCreation, firstMovie = _rowInfo(self.moviesTable[0])
-        lastTs, lastCreation, lastMovie = _rowInfo(self.moviesTable[-1])
-        hours = (lastCreation - firstCreation).seconds / 3600
-
-        return {
-            'movies': len(self.moviesTable),
-            'first_movie': firstMovie,
-            'first_movie_creation': firstTs,
-            'last_movie': lastMovie,
-            'last_movie_creation': lastTs,
-            'duration': f'{hours:0.2f} hours',
-        }
-
     def __contains__(self, item):
         return item in self._index_files
 
@@ -202,3 +190,45 @@ class DataFiles:
         print(f"Total files: {self.total_files}")
         self.counters[0].print('file')
 
+
+class MovieFiles(DataFiles):
+    """ Extension of DataFiles that counts also movie files. """
+    def __init__(self, moviesSuffix='fractions.tiff'):
+        DataFiles.__init__(self, filters=[self.is_movie])
+        self._moviesSuffix = 'fractions.tiff'
+
+    def is_movie(self, fn):
+        return fn.endswith(self._moviesSuffix)
+
+    def info(self):
+        """ Return a dict with some info """
+
+        if self.total_files == 0:
+            return {}
+
+        fc = self.counters[0]  # files counter
+        fcInfo = fc.info()
+        mc = self.counters[1]  # movies counter
+        mcInfo = mc.info()
+        total_size = self._ed.total_size
+
+        return {
+            'files': self._ed,
+            'files_total': fc.total,
+            'size': total_size,
+            'sizeH': Pretty.size(total_size),
+            'first_file': fc.first,
+            'first_file_creation': fc.first_ts,
+            'last_file': fc.last,
+            'last_file_creation': fc.last_ts,
+            'movies': mc.total,
+            'first_movie': mc.first,
+            'first_movie_creation': mc.first_ts,
+            'last_movie': mc.last,
+            'last_movie_creation': mc.last_ts,
+            'duration': fcInfo['duration']
+        }
+
+    @property
+    def total_movies(self):
+        return self.counters[1].total
