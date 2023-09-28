@@ -74,7 +74,11 @@ def main():
             pidstr = f"{p.info['ppid']}/{p.pid}"
             msg = f"   {prefix}  {p.info['username']:<15} {pidstr:<15} {color(p.info['name']):<30}"
             if v > 0:
-                cpu_percent = p.cpu_percent(interval=1) / cpus
+                try:
+                    cpu_percent = p.cpu_percent(interval=1) / cpus
+                except:
+                    continue
+
                 msg += f" {cpu_percent:>10,.2f} {p.info['memory_percent']:>10,.2f}"
                 if v > 1:
                     msg += f" {p.cmdline()}"

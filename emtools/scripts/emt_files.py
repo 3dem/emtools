@@ -179,11 +179,35 @@ def main():
             if not os.path.exists(d):
                 print("ERROR: Missing dir: " + Color.red(d))
 
+    def _mkdir(d):
+        if not os.path.exists(d):
+            Process.system(f"mkdir -p '{d}'")
+
     if folder := args.stats:
         statsDir(folder, args.sort)
 
     elif dirs := args.copy_dir:
-        Path.copyDir(dirs[0], dirs[1], sleep=args.delay)
+        src, dst = args.copy_dir
+        # Path.copyDir(src, dst, sleep=args.delay)
+        all_files = []
+        for root, dirs, files in os.walk(src):
+            #root2 = root.replace(dir1, dir2)
+            # for d in dirs:
+            #     _mkdir(os.path.join(root2, d))
+            for f in files:
+                srcFn = os.path.join(root, f)
+                all_files.append((srcFn, os.stat(srcFn)))
+                #_copy(os.path.join(root, f), os.path.join(root2, f), **kwargs)
+
+        # Sort all files by modification time
+        # so we can simulate the generation of files in the same order
+        # as initially acquired
+        all_files.sort(key=lambda t: t[1].st_mtime)
+        for t in all_files:
+            srcFn = t[0]
+            dstFn = srcFn.replace(src, dst)
+            _mkdir(os.path.dirname(dstFn))
+            Path.copyFile(srcFn, dstFn, sleep=args.delay)
 
     elif dirs := args.check_dirs:
         sync = Path.inSync(dirs[0], dirs[1], verbose=True)
@@ -238,8 +262,8 @@ def main():
         ed = Path.ExtDict()
         for root, dirs, files in os.walk(args.parse):
             for f in files:
-                fn = os.path.join(root, f)
-                if os.path.isfile(fn):
+                srcFn = os.path.join(root, f)
+                if os.path.isfile(srcFn):
                     ed.register(os.path.join(root, f))
         ed.print()
 

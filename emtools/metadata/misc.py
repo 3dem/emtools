@@ -105,6 +105,7 @@ class DataFiles:
             self.last = None
             self.last_ts = None
             self.total = 0
+            self.total_size = 0
             self._filter_func = filter_func
 
         def register(self, fn, stat):
@@ -117,6 +118,7 @@ class DataFiles:
                     self.last_ts = stat.st_mtime
 
                 self.total += 1
+                self.total_size += stat.st_size
 
         def print(self, name):
             if self.first:
