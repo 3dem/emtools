@@ -17,7 +17,7 @@ class Path:
         """ Keep track of number of files and size by extension. """
         def register(self, filename, stat=None):
             """ Register a file, if stat is None it will be calculated. """
-            if os.path.exists(filename):
+            if stat or os.path.exists(filename):
                 stat = stat or os.stat(filename)
                 ext = os.path.splitext(filename)[1]
                 if ext not in self:
