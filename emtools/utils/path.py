@@ -63,15 +63,21 @@ class Path:
         return os.path.normpath(path).split(os.path.sep)
 
     @staticmethod
+    def addslash(path):
+        return path if path.endswith('/') else path + '/'
+
+    @staticmethod
+    def rmslash(path):
+        return path[:-1] if path.endswith('/') else path
+
+    @staticmethod
     def inSync(dir1, dir2, verbose=False):
         """ Return True if both dir1 and dir2 are synchronized (i.e. same content)
         Use rsync as a subprocess to check if the two directories
         are synchronized. Both directories must exist.
         """
-        if not dir1.endswith('/'):
-            dir1 += '/'
-        if not dir2.endswith('/'):
-            dir2 += '/'
+        dir1 = Path.addslash(dir1)
+        dir2 = Path.addslash(dir2)
 
         p = Process('rsync', '--dry-run', '-a', '--stats', dir1, dir2)
         if verbose:
