@@ -12,40 +12,26 @@ from emtools.metadata import EPU
 
 
 def main():
-    p = argparse.ArgumentParser(prog='emt-epu-parse')
-    p.add_argument('rootFolder',
+    p = argparse.ArgumentParser(prog='emt-epu')
+    p.add_argument('--scan', metavar='EPU_FOLDER',
                    help="Parse data from this root folder for all "
                         "movies' xml files. Output file will be a star file "
                         "with parsed information. ")
-    p.add_argument('--output', '-o', default='',
+    p.add_argument('--output', '-o',
                    help="Output file depending in the action. ")
 
-    p.add_argument('--limit', '-l', default=0, type=int,
-                   help="Limit number of entries (for debugging)")
-
-    p.add_argument('--backup', '-b', default='',
-                   help="Backup metadata files")
+    p.add_argument('--backup', '-b', metavar='BACKUP_FOLDER',
+                   help="Backup JPG and some XML files.")
 
     p.add_argument('--info', action='store_true')
-    p.add_argument('--last_movie', default='')
 
     args = p.parse_args()
 
     kwargs = {}
-    if not args.info:
-        doBackup = bool(args.backup)
-        backupFolder = args.backup or os.path.dirname(args.output)
-        kwargs = {
-            'outputStar': args.output,
-            'backupFolder': backupFolder,
-            'doBackup': doBackup,
-            'limit': args.limit
-        }
-        if args.last_movie:
-            kwargs['lastMovie'] = args.last_movie
-
-    info = EPU.parse_session(args.rootFolder, **kwargs)
-    pprint(info)
+    if args.scan:
+        s = EPU.Session(args.scan, outputStar=args.output, backupFolder=args.backup)
+        s.scan()
+        s.df.print()
 
 
 if __name__ == '__main__':

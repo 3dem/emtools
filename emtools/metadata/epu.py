@@ -15,12 +15,13 @@
 # **************************************************************************
 
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 import xmltodict
 
 from emtools.utils import Pretty, Path, Color, Process
 from .table import Table
 from .starfile import StarFile
+from .misc import MovieFiles
 
 
 class EPU:
@@ -58,87 +59,6 @@ class EPU:
         }
 
         return data
-
-    @staticmethod
-    def parse_session(inputDir, outputStar=None, backupFolder=None, doBackup=False, lastMovie=None, limit=0, pl=Process):
-        """ Parse input files from an EPU session.
-        Args:
-            inputDir: input path where the session files are.
-            outputStar: parse image parameters from the XML and write to this star file
-            backupFolder: copy files and folder to this location
-            lastMovie: last seen movie, used to avoid parsing if no new changes
-            limit: development option to limit the number of parsed files
-            pl: ProcessLogger instance, by default use just Process.system
-        """
-        if not os.path.exists(inputDir):
-            raise Exception(f"Input dir '{Color.red(inputDir)}' does not exist.")
-
-        if not os.path.isdir(inputDir):
-            raise Exception(f"Input '{Color.red(inputDir)}' must be a path.")
-
-        movies = []
-        to_backup = []
-        ed = Path.ExtDict()
-
-        def _rel(fn):
-            return os.path.relpath(fn, inputDir)
-
-        def _backup(fn):
-            if backupFolder and doBackup:
-                folder, file = os.path.split(fn)
-                dstFolder = os.path.join(backupFolder, _rel(folder))
-                dstFile = os.path.join(dstFolder, file)
-                if not os.path.exists(dstFile):
-                    if not os.path.exists(dstFolder):
-                        pl.system(f"mkdir -p {dstFolder}")
-                    pl.system(f'cp {fn} {dstFolder}')
-
-        def _backup_pair(jpgFn):
-            """ Count files and size. """
-            for fn in [jpgFn, jpgFn.replace('.jpg', '.xml')]:
-                to_backup.append(fn)
-
-        def _get_movies():
-            for root, dirs, files in os.walk(inputDir):
-                for f in files:
-                    fn = os.path.join(root, f)
-                    s = os.stat(fn)
-                    ed.register(fn, s)
-                    if f.startswith('GridSquare_') and f.endswith('.jpg'):
-                        _backup_pair(fn)
-                    # Check existing movies first
-                    if f.startswith('FoilHole_'):
-                        if f.endswith('_fractions.tiff'):
-                            movies.append((fn, s))
-                        elif f.endswith('.xml'):
-                            _backup(fn)
-
-        _get_movies()
-        movies.sort(key=lambda m: m[1].st_mtime)
-
-        info = {
-            'size': ed.total_size,
-            'sizeH': Pretty.size(ed.total_size),
-            'files': ed
-        }
-
-        if limit:
-            movies = movies[:limit]
-
-        last_movie = movies[-1][0]
-        if outputStar and lastMovie != last_movie:
-            for fn in to_backup:
-                _backup(fn)
-            if os.path.exists(outputStar):
-                os.remove(outputStar)
-            data = EPU.Data(inputDir, inputDir, epuStar=outputStar)
-            for i, m in enumerate(movies):
-                movieFn, movieStat = m
-                data.addMovie(_rel(movieFn), movieStat)
-            data.write()
-
-            info.update(data.info())
-        return info
 
     @staticmethod
     def parse_beam_shifts(xmlFile):
@@ -185,17 +105,20 @@ class EPU:
         return loc
 
     class Data:
-        def __init__(self, dataFolder, epuFolder, epuStar=None):
+        """ Class to keep track of EPU files and associated metadata.
+        The information can be read/write from/to a STAR file.
+        """
+        def __init__(self, rootFolder, epuStar):
             self._acq = None
-            self._dataFolder = dataFolder
-            self._epuFolder = epuFolder
-            self._epuStar = epuStar or os.path.join(self._epuFolder, 'movies.star')
+            self._rootFolder = rootFolder
+            self._epuStar = epuStar
 
+            # If the file already exist, read from disk
             if os.path.exists(self._epuStar):
                 with StarFile(self._epuStar) as sf:
                     self.gsTable = sf.getTable('GridSquares')
                     self.moviesTable = sf.getTable('Movies')
-            else:
+            else:  # if not, create the empty tables
                 self.gsTable = Table(['id', 'folder', 'image', 'xml'])
                 self.moviesTable = Table(['movieBaseName', 'gsId', 'fhId',
                                           'timeStamp', 'beamShiftX',
@@ -222,7 +145,7 @@ class EPU:
                           'folder': gsFolder,
                           'image': 'None',
                           'xml': 'None'}
-                for fn in os.listdir(os.path.join(self._epuFolder, gsFolder)):
+                for fn in os.listdir(os.path.join(self._rootFolder, gsFolder)):
                     if fn.startswith('GridSquare'):
                         if fn.endswith('.jpg'):
                             values['image'] = fn
@@ -271,3 +194,89 @@ class EPU:
                 'last_movie_creation': lastTs,
                 'duration': f'{hours:0.2f} hours',
             }
+
+    class Session:
+        """
+        Monitor EPU session files and allow to make a copy of GridSquares
+        images and xml files.
+        """
+        def __init__(self, inputDir, outputStar=None, backupFolder=None, pl=None):
+            """
+            Create a new EPU.Session instance.
+
+            Args:
+                inputDir: input path where the session files are.
+                outputStar: If not None, parse image parameters from the XML and write to this star file
+                backupFolder: If not None, copy some jpg and xml files to this location
+                pl: ProcessLogger instance, by default use just a default logger to stdout
+            """
+            self.inputDir = inputDir
+            self.outputStar = outputStar
+            self.backupFolder = backupFolder
+            self.pl = pl or Process.Logger()
+
+            if not os.path.exists(inputDir):
+                raise Exception(f"Input dir '{Color.red(inputDir)}' does not exist.")
+
+            if not os.path.isdir(inputDir):
+                raise Exception(f"Input '{Color.red(inputDir)}' must be a path.")
+
+            if backupFolder and not os.path.exists(backupFolder):
+                pl.mkdir(backupFolder)
+
+            self.df = MovieFiles(root=inputDir)
+
+        def scan(self):
+            """ Scan new files from the EPU session. """
+            df = self.df
+            movies = []
+            now = datetime.now()
+            td = timedelta(minutes=1)
+
+            def _rel(fn):
+                return os.path.relpath(fn, self.inputDir)
+
+            def _backup(fn):
+                if self.backupFolder:
+                    folder, file = os.path.split(fn)
+                    dstFolder = os.path.join(self.backupFolder, _rel(folder))
+                    dstFile = os.path.join(dstFolder, file)
+                    if not os.path.exists(dstFile):
+                        if not os.path.exists(dstFolder):
+                            self.pl.mkdir(dstFolder)
+                        self.pl.cp(fn, dstFolder)
+
+            def _backup_pair(jpgFn):
+                """ Count files and size. """
+                for fn in [jpgFn, jpgFn.replace('.jpg', '.xml')]:
+                    _backup(fn)
+
+            for root, dirs, files in os.walk(self.inputDir):
+                for f in files:
+                    fn = os.path.join(root, f)
+                    s = os.stat(fn)
+                    dt = datetime.fromtimestamp(s.st_mtime)
+                    if now - dt >= td and fn not in df:
+                        df.register(fn, s)
+                        if f.startswith('GridSquare_') and f.endswith('.jpg'):
+                            _backup_pair(fn)
+                        # Check existing movies first
+                        if f.startswith('FoilHole_'):
+                            if f.endswith('_fractions.tiff'):
+                                movies.append((fn, s))
+                            elif f.endswith('.xml'):
+                                _backup(fn)
+
+            movies.sort(key=lambda m: m[1].st_mtime)
+
+            if self.outputStar and movies:
+                if os.path.exists(self.outputStar):
+                    os.remove(self.outputStar)
+                data = EPU.Data(self.inputDir, self.outputStar)
+                for i, m in enumerate(movies):
+                    movieFn, movieStat = m
+                    data.addMovie(_rel(movieFn), movieStat)
+                data.write()
+
+        def info(self):
+            return self.df.info()
