@@ -75,7 +75,7 @@ setup(
        'console_scripts': [
            'emt-ps = emtools.scripts.emt_ps:main',
            'emt-files = emtools.scripts.emt_files:main',
-           'emt-epu-parse = emtools.scripts.emt_epu_parse:main',
+           'emt-epu = emtools.scripts.emt_epu:main',
            'emt-beamshifts = emtools.scripts.emt_beamshifts:main'
        ],
     },

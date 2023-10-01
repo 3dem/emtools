@@ -135,6 +135,9 @@ class DataFiles:
             if self.first and self.last_ts:
                 print(f"Duration: {(last_dt - first_dt).seconds / 3600:0.2f} hours")
 
+            print(f"Total {name}s: {self.total}, size: {Pretty.size(self.total_size)}")
+
+
         def info(self):
             fts = datetime.fromtimestamp(self.first_ts) if self.first else None
             lts = datetime.fromtimestamp(self.last_ts) if self.last else None
@@ -147,7 +150,7 @@ class DataFiles:
             }
 
     def __init__(self, filters=[], root=None):
-        self.root = root
+        self.root = Path.addslash(root)
         self._ed = Path.ExtDict()
         self._total_dirs = 0
         self._index_files = set()
@@ -157,7 +160,7 @@ class DataFiles:
 
     def scan(self, folder):
         """ Scan a folder and register all files recursively. """
-        self.root = folder
+        self.root = Path.addslash(folder)
 
         for root, dirs, files in os.walk(folder):
             for fn in files:
@@ -171,12 +174,13 @@ class DataFiles:
             if fn not in self._index_files:
                 self._index_files.add(fn)
                 stat = stat or os.stat(filename)
-
+                # Register for each type of counter
                 for c in self.counters:
                     c.register(fn, stat)
-                # Track first and last file based on modification time
-
+                # Register for file extension stats
                 self._ed.register(filename, stat=stat)
+                return True
+        return False
 
     @property
     def total_files(self):
@@ -235,3 +239,7 @@ class MovieFiles(DataFiles):
     @property
     def total_movies(self):
         return self.counters[1].total
+
+    def print(self):
+        DataFiles.print(self)
+        self.counters[1].print('movie')
