@@ -135,6 +135,11 @@ class Process:
 
             return exit_status
 
+        def mkdir(self, path, retry=None):
+            """ Make a folder path. """
+            self.system(f"mkdir -p '{path}'", retry=retry)
 
-
+        def cp(self, src, dst, retry=None):
+            """ Make a folder path. """
+            self.system(f"cp '{src}' '{dst}'", retry=retry)
 
