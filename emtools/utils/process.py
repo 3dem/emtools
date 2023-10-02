@@ -137,9 +137,14 @@ class Process:
 
         def mkdir(self, path, retry=None):
             """ Make a folder path. """
-            self.system(f"mkdir -p '{path}'", retry=retry)
+            if not os.path.exists(path):
+                self.system(f"mkdir -p '{path}'", retry=retry)
 
         def cp(self, src, dst, retry=None):
             """ Make a folder path. """
             self.system(f"cp '{src}' '{dst}'", retry=retry)
+
+        def rm(self, path):
+            """ Remove a folder or file. """
+            self.system(f"rm -rf '{path}'")
 
