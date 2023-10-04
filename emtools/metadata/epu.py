@@ -222,9 +222,10 @@ class EPU:
                 raise Exception(f"Input '{Color.red(inputDir)}' must be a path.")
 
             if backupFolder and not os.path.exists(backupFolder):
-                pl.mkdir(backupFolder)
+                self.pl.mkdir(backupFolder)
 
             self.df = MovieFiles(root=inputDir)
+            self.all_movies = []
 
         def scan(self):
             """ Scan new files from the EPU session. """
@@ -270,13 +271,18 @@ class EPU:
             movies.sort(key=lambda m: m[1].st_mtime)
 
             if self.outputStar and movies:
-                if os.path.exists(self.outputStar):
-                    os.remove(self.outputStar)
-                data = EPU.Data(self.inputDir, self.outputStar)
-                for i, m in enumerate(movies):
+                # Write first to a temporary file and then overwrite
+                tmpStar = self.outputStar + '-tmp.star'
+                print(f"Writing star {tmpStar} -> {self.outputStar}, "
+                      f"movies: {len(movies)}, total: {len(self.all_movies)}")
+                self.pl.rm(tmpStar)
+                data = EPU.Data(self.inputDir, tmpStar)
+                self.all_movies.extend(movies)
+                for i, m in enumerate(self.all_movies):
                     movieFn, movieStat = m
                     data.addMovie(_rel(movieFn), movieStat)
                 data.write()
+                self.pl.mv(tmpStar, self.outputStar)
 
         def info(self):
             return self.df.info()

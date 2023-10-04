@@ -144,6 +144,10 @@ class Process:
             """ Make a folder path. """
             self.system(f"cp '{src}' '{dst}'", retry=retry)
 
+        def mv(self, src, dst, retry=None):
+            """ Make a folder path. """
+            self.system(f"mv '{src}' '{dst}'", retry=retry)
+
         def rm(self, path):
             """ Remove a folder or file. """
             self.system(f"rm -rf '{path}'")
