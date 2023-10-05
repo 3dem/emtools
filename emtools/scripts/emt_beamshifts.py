@@ -49,13 +49,16 @@ class Cluster:
         for i, g in enumerate(self.groups):
             m = g['mean']
             d2 = (m['x'] - x) ** 2 + (m['y'] - y) ** 2
-            if not best_group or d2 < best_dist:
+
+            if i == 0 or d2 < best_dist:
                 best_group = i
                 best_dist = d2
-        if not best_group or best_dist > self.d2:
+        # Create a new group if there are no groups or the best distance
+        # is larger that the minimum group distance
+        if best_group is None or best_dist > self.d2:
             best_group = len(self.groups)
             self.groups.append({'mean': p, 'points': [p]})
-        else: # Update best group with the new point
+        else:  # Update best group with the new point
             g = self.groups[best_group]
             g['points'].append(p)
             m = g['mean']
@@ -71,22 +74,28 @@ def plot(inputStar, distance=0.005):
     xvalues = []
     yvalues = []
     colors = []
+    points = []
     cluster = Cluster(distance)
 
     with StarFile(inputStar) as sf:
-        for row in sf.iterTable('Movies'):
+        for i, row in enumerate(sf.iterTable('Movies')):
             xvalues.append(row.beamShiftX)
             yvalues.append(row.beamShiftY)
-            group = cluster.addPoint({'x': row.beamShiftX, 'y': row.beamShiftY})
-            colors.append(group)
+            points.append({'x': row.beamShiftX, 'y': row.beamShiftY, 'i': i + 1})
 
-    for i, g in enumerate(cluster.groups):
-        m = g['mean']
-        plt.text(m['x'], m['y'], str(i + 1))
+        for p in points:
+            group = cluster.addPoint(p)
+            colors.append(group)
 
     print("Groups: ", len(cluster.groups))
 
     plt.scatter(xvalues, yvalues, c=colors)
+
+    for i, g in enumerate(cluster.groups):
+        gid = str(i + 1)
+        m = g['mean']
+        plt.text(m['x'], m['y'], gid)
+
     plt.show()
 
 

@@ -75,9 +75,10 @@ class EPU:
         Args:
             xmlDir: Parse beam shifts from all movies' xml in this dir
         Return:
-            Iterator over the parsed files. Each iteratorion will yield:
+            Iterator over the parsed files. Each iteration will yield:
                 MovieBaseName, xshift, yshift
         """
+        missing_xml = []
         for root, dirs, files in os.walk(xmlDir):
             for fn in files:
                 f = os.path.join(root, fn)
@@ -87,6 +88,13 @@ class EPU:
                     if os.path.exists(xmlFn):
                         x, y = EPU.parse_beam_shifts(xmlFn)
                         yield os.path.basename(fn), x, y
+                    else:
+                        missing_xml.append(f)
+
+        if missing_xml:
+            print('Missing XML files for the following movies:')
+            for f in missing_xml:
+                print('\t- ', f)
 
     @staticmethod
     def get_movie_location(movieName):
