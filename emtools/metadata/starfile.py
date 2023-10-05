@@ -70,7 +70,7 @@ class StarFile(AbstractContextManager):
         return item in self.getTableNames()
 
     def getTableNames(self):
-        """ Return all the names of the data_ blocks found in the file. """
+        """ Return all the names of the *data\_* blocks found in the file. """
         if not self._names:  # Scan for ALL table names
             f = self._file  # shortcut notation
             f.seek(0)  # move file pointer to the beginning
@@ -101,6 +101,7 @@ class StarFile(AbstractContextManager):
         """
         Read the given table from the file and parse columns' definition
         and data rows.
+
         Args:
             tableName: the name of the table to read, it can be the empty string
             kwargs:
@@ -121,7 +122,8 @@ class StarFile(AbstractContextManager):
     def getTableSize(self, tableName):
         """ Return the number of elements in the given table.
         This method is much more efficient that parsing the table
-        and getting the size, if the size what is important.
+        and getting the size, if the one is only interested in the
+        number of elements in the table.
         """
         self._loadTableInfo(tableName)
         if self._singleRow:
@@ -139,9 +141,12 @@ class StarFile(AbstractContextManager):
     def iterTable(self, tableName, **kwargs):
         """ Only iterate over the table's rows and do not create
         a Table in memory to store all rows.
-        Kwargs:
-            start: starting index, first one is 0
-            limit: limit to this number of elements
+
+        Args:
+            tableName: name of the table to iterate
+            kwargs:
+                start, starting index, first one is 0
+                limit, limit to this number of elements
         """
         start = kwargs.get('start', 0)
         limit = kwargs.get('limit', None)
@@ -281,12 +286,14 @@ class StarFile(AbstractContextManager):
 
     # ---------------------- Writer functions --------------------------------
     def writeLine(self, line):
+        """ Write a line to the opened file. """
         self._file.write(f"{line}\n")
 
     def _writeTableName(self, tableName):
         self._file.write("\ndata_%s\n\n" % (tableName or ''))
 
     def writeSingleRow(self, tableName, row):
+        """ Write a Row as a single row Table of label/value pairs. """
         self._writeTableName(tableName)
         m = max([len(c) for c in row._fields]) + 5
         format = "_{:<%d} {:>10}\n" % m
@@ -295,6 +302,8 @@ class StarFile(AbstractContextManager):
         self._file.write('\n\n')
 
     def writeHeader(self, tableName, table):
+        """ Write table and column names. Needed before any
+        row can be written. """
         self._format = None  # clear format for writing new table
         self._writeTableName(tableName)
         self._file.write("loop_\n")
@@ -340,10 +349,11 @@ class StarFile(AbstractContextManager):
 
     def writeTable(self, tableName, table, singleRow=False):
         """ Write a Table in Star format to the given file.
+
         Args:
             tableName: The name of the table to write.
             table: Table that is going to be written
-            singleRow: If True, don't write loop_, just label - value pairs.
+            singleRow: If True, don't write *loop\_*, just label/value pairs.
         """
         if table.size():
             if singleRow:
