@@ -29,6 +29,8 @@ def main():
 
     p.add_argument('--specs', '-s', action='store_true',
                    help='Print out this machine hardware specifications.')
+    p.add_argument('--hostname', action='store_true',
+                   help='Print out this machine hostname.')
     p.add_argument('--name', '-n',
                    help="Program name to check running processes")
     p.add_argument('--folder', '-f',
@@ -48,6 +50,9 @@ def main():
 
     if args.specs:
         pprint(specs)
+        sys.exit(0)
+    elif args.hostname:
+        print(System.hostname())
         sys.exit(0)
 
     v = args.verbose
