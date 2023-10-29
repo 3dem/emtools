@@ -335,7 +335,7 @@ def create_project(workingDir):
     wf.launchProtocol(protCTF, wait={OUT_CTFS: 16})
 
     protCryoloImport = None
-    cryoloInputModelFrom = 0  # General model (low-pass filtered)
+    cryoloInputModelFrom = 1  # General model (Janni denoised)
     if 'cryolo_model' in picking:
         protCryoloImport = wf.createProtocol(
             'sphire.protocols.SphireProtCryoloImport',
@@ -351,9 +351,9 @@ def create_project(workingDir):
         boxSize=0,  # let cryolo estimate the box size
         conservPickVar=0.05,  # less conservative than default 0.3
         useGpu=False,  # use cpu for picking, fast enough
-        numCpus=16,
+        numCpus=8,
         gpuList='',
-        streamingBatchSize=16,
+        streamingBatchSize=8,
         streamingSleepOnWait=60,
         numberOfThreads=1,
         inputModelFrom=cryoloInputModelFrom
@@ -577,7 +577,7 @@ def main():
                    help="Some test code")
     g.add_argument('--clean', action="store_true",
                    help="Clean Scipion project files/folders.")
-
+    g.add_argument('--continue_2d', action="store_true")
     g.add_argument('--write_stars', action="store_true",
                    help="Generate STAR micrographs and particles STAR files.")
 
@@ -595,6 +595,8 @@ def main():
         clean_project(cwd)
     elif args.write_stars:
         write_stars(cwd)
+    elif args.continue_2d:
+        continue_project(cwd)
     else:  # by default open the GUI
         from pyworkflow.gui.project import ProjectWindow
         ProjectWindow(cwd).show()

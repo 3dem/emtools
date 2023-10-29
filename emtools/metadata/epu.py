@@ -263,7 +263,10 @@ class EPU:
             for root, dirs, files in os.walk(self.inputDir):
                 for f in files:
                     fn = os.path.join(root, f)
-                    s = os.stat(fn)
+                    try:
+                        s = os.stat(fn)
+                    except FileNotFoundError:
+                        continue  # just ignore temporary files
                     dt = datetime.fromtimestamp(s.st_mtime)
                     if now - dt >= td and fn not in df:
                         df.register(fn, s)
