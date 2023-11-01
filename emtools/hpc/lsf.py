@@ -89,11 +89,10 @@ def nodes_from_users(usersdict):
 def get_queues(queuePattern):
     queues = []
     if queuePattern:
-        for line in Process("bqueues").lines():
-            if 'QUEUE_NAME' not in line and line.strip():
-                parts = line.split()
-                if queuePattern in parts[0]:
-                    queues.append(parts[0])
+        args = ["bqueues", "-o", "queue_name"]
+        p = Process(*args, stdout=True, doRaise=False)
+        p.print()
+        queues = [line.strip() for line in p.lines() if queuePattern in line]
     return queues
 
 
