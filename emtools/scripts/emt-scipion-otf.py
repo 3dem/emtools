@@ -353,7 +353,7 @@ def create_project(workingDir):
         useGpu=False,  # use cpu for picking, fast enough
         numCpus=8,
         gpuList='',
-        streamingBatchSize=8,
+        streamingBatchSize=16,
         streamingSleepOnWait=60,
         numberOfThreads=1,
         inputModelFrom=cryoloInputModelFrom
