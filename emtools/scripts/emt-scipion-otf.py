@@ -335,7 +335,7 @@ def create_project(workingDir):
     wf.launchProtocol(protCTF, wait={OUT_CTFS: 16})
 
     protCryoloImport = None
-    cryoloInputModelFrom = 1  # General model (Janni denoised)
+    cryoloInputModelFrom = 0  # General model (low pass filtered)
     if 'cryolo_model' in picking:
         protCryoloImport = wf.createProtocol(
             'sphire.protocols.SphireProtCryoloImport',
