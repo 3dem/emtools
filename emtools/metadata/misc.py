@@ -150,7 +150,7 @@ class DataFiles:
             }
 
     def __init__(self, filters=[], root=None):
-        self.root = Path.addslash(root)
+        self.root = Path.addslash(root) if root else None
         self._ed = Path.ExtDict()
         self._total_dirs = 0
         self._index_files = set()
