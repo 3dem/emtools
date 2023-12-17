@@ -560,6 +560,36 @@ def write_stars(workingDir):
         elif clsName == 'SphireProtCRYOLOPicking':
             write_coordinates('coordinates.star', prot)
 
+def clone_project(src, dst):
+    """ Clone an existing Scipion project into a new project.
+    Existing run folders will not be copied but linked to save space. """
+
+    #for r in /jude/facility/appdpcryoem/ 20231019_Krios01_cdk16_data_1_OTF/Runs/ *; do echo $r; ln -s $r; done
+    #rsync - av - -exclude = {'EPU', 'Coordinates', 'Runs', 'Tmp'} / jude / facility / appdpcryoem / 20231019
+    if not os.path.exists(os.path.join(src, 'project.sqlite')):
+        raise Exception("Missing 'project.sqlite' from src folder, "
+                        "please provide a valid project folder")
+
+    srcRuns = os.path.join(src, 'Runs')
+    runs = os.listdir(srcRuns)
+    if not runs:
+        raise Exception("There are no runs in src folder, "
+                        "please provide a valid project folder")
+
+    projectName = os.path.basename(src)
+    cloneFolder = os.path.join(dst, projectName)
+
+    dstRuns = os.path.join(cloneFolder, 'Runs')
+    Process.system(f"mkdir -p {dstRuns}")
+    Process.system(f"rsync -av --exclude={{'EPU','Coordinates','Runs','Tmp','logs'}} {src}/ {cloneFolder}/")
+
+    print("Linking runs...")
+
+    for r in runs:
+        srcR = os.path.join(srcRuns, r)
+        dstR = os.path.join(dstRuns, r)
+        Process.system(f"ln -s {srcR} {dstR}")
+
 
 def main():
     p = argparse.ArgumentParser(prog='scipion-otf')
@@ -580,6 +610,8 @@ def main():
     g.add_argument('--continue_2d', action="store_true")
     g.add_argument('--write_stars', action="store_true",
                    help="Generate STAR micrographs and particles STAR files.")
+    g.add_argument('--clone_project', nargs=2, metavar=('SRC', 'DST'),
+                   help="Clone an existing Scipion project")
 
     args = p.parse_args()
 
@@ -597,6 +629,9 @@ def main():
         write_stars(cwd)
     elif args.continue_2d:
         continue_project(cwd)
+    elif args.clone_project:
+        src, dst = args.clone_project
+        clone_project(src, dst)
     else:  # by default open the GUI
         from pyworkflow.gui.project import ProjectWindow
         ProjectWindow(cwd).show()

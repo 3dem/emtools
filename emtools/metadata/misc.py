@@ -137,7 +137,6 @@ class DataFiles:
 
             print(f"Total {name}s: {self.total}, size: {Pretty.size(self.total_size)}")
 
-
         def info(self):
             fts = datetime.fromtimestamp(self.first_ts) if self.first else None
             lts = datetime.fromtimestamp(self.last_ts) if self.last else None

@@ -107,9 +107,12 @@ class ProtocolMonitor:
         return self._lastUpdate
 
 
-class SetDict(OrderedDict):
-    """ Ordered Dict subclass to keep track of Scipion sets.
-    It provides a useful 'update' method to check for new items.
+class SetMonitor(OrderedDict):
+    """ Monitor a Scipion set working in streaming where new items are added.
+    This class will subclass OrderedDict to hold a clone of each new element.
+    It will also keep internally the last access timestamp to prevent loading
+    the sqlite database of the set if it has not been modified after the last
+    check.
     """
     def __init__(self, SetClass, filename, *args, **kwargs):
         OrderedDict.__init__(self, *args, **kwargs)
@@ -137,3 +140,10 @@ class SetDict(OrderedDict):
 
         self.lastUpdate = now
         return newItems
+
+    def newItems(self, sleep=10):
+        """ Yield new items since last update until the stream is closed. """
+        while not self.streamClosed:
+            for ni in self.update():
+                yield ni
+            time.sleep(sleep)
