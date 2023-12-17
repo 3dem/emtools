@@ -126,3 +126,4 @@ class Pretty:
 
         return _plural(365, 'year')
 
+
