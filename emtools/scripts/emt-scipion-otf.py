@@ -14,6 +14,8 @@
 # * GNU General Public License for more details.
 # *
 # **************************************************************************
+
+import sys
 import json
 import os.path
 import argparse
@@ -423,16 +425,15 @@ def restart(workingDir, ids):
 
     all_protocols = [2, 88, 198, 262, 318]
 
-    for protId in all_protocols:
+    for protId in ids: 
         prot = project.getProtocol(protId)
         clsName = prot.getClassName()
         print(f"- {prot.getObjId()}: {clsName}")
-        if prot.getObjId() in ids:
-            print("\t * Stopping...")
-            project.stopProtocol(prot)
-            print("\t * Re-running...")
-            project.launchProtocol(prot, force=True)
-            time.sleep(30)
+        print("\t * Stopping...")
+        project.stopProtocol(prot)
+        print("\t * Re-running...")
+        project.launchProtocol(prot, force=True)
+        time.sleep(30)
 
 
 def restart_rankers(workingDir):
@@ -544,21 +545,51 @@ def write_coordinates(micStarFn, prot):
         sf.writeTable('coordinate_files', coordsMicTable)
 
 
-def write_stars(workingDir):
+def print_prot(prot, label='Protocol'):
+    print(f">>> {label} {prot.getObjId():>6}   {prot.getClassName():<30} {prot.getRunName()}")
+
+
+def write_stars(workingDir, ids=None):
     """ Restart one or more protocols. """
+    print("ids", ids)
+
+    def _get_keys(tokens):
+        for t in tokens:
+            parts = t.split('=')
+            yield parts[0], int(parts[1])
+
     project = Project(pw.Config.getDomain(), workingDir)
     project.load()
 
-    for prot in project.getRuns():
-        clsName = prot.getClassName()
-        if clsName == 'CistemProtCTFFind':
-            ctfs = prot.outputCTF
-            print(f"- {prot.getObjId()}: {prot.getRunName()} ({clsName})")
-            print(f"            CTFs: {ctfs.getSize()}")
-            write_micrographs_star('micrographs_ctf.star', ctfs)
+    protCtf = None
+    protPicking = None
 
-        elif clsName == 'SphireProtCRYOLOPicking':
-            write_coordinates('coordinates.star', prot)
+    if ids:
+        idsDict = {k: v for k, v in _get_keys(ids)}
+        if 'ctfs' in idsDict:
+            protCtf = project.getProtocol(idsDict['ctfs'])
+        if 'picking' in idsDict:
+            protPicking = project.getProtocol(idsDict['picking'])
+    else:
+        # Default option when running OTF that we export STAR files
+        # from CTFFind and Cryolo runs
+        for prot in project.getRuns():
+            clsName = prot.getClassName()
+            if clsName == 'CistemProtCTFFind':
+                protCtf = prot
+            elif clsName == 'SphireProtCRYOLOPicking':
+                protPicking = prot
+
+    if protCtf:
+        ctfs = protCtf.outputCTF
+        print_prot(protCtf, label='CTF protocol')
+        print(f"            CTFs: {ctfs.getSize()}")
+        write_micrographs_star('micrographs_ctf.star', ctfs)
+
+    if protPicking:
+        print_prot(protPicking, label='Picking protocol')
+        write_coordinates('coordinates.star', protPicking)
+
 
 def clone_project(src, dst):
     """ Clone an existing Scipion project into a new project.
@@ -591,6 +622,32 @@ def clone_project(src, dst):
         Process.system(f"ln -s {srcR} {dstR}")
 
 
+def fix_run_links(workingDir, srcRuns):
+    dstRuns = os.path.join(workingDir, 'Runs')
+
+    if not os.path.exists(dstRuns):
+        raise Exception("Missing Runs folder")
+
+    if not os.path.exists(srcRuns):
+        raise Exception(f"Source '{srcRuns}' does not exists.")
+
+    if not (srcRuns.endswith('Runs') or srcRuns.endswith('Runs/')):
+        raise Exception(f"Source '{srcRuns}' does not end with 'Runs'")
+
+    rootRuns = os.path.join('Runs', 'runs')
+    logger = Process.Logger(format="%(message)s")
+    logger.rm(rootRuns)
+    logger.system(f"ln -s {srcRuns} {rootRuns}")
+
+    srcRunFolders = os.listdir(srcRuns)
+    print(dstRuns)
+    for fn in os.listdir(dstRuns):
+        f = os.path.join(dstRuns, fn)
+        if os.path.islink(f) and fn in srcRunFolders:
+            os.unlink(f)
+            logger.system(f"cd Runs && ln -s runs/{fn}")
+
+
 def main():
     p = argparse.ArgumentParser(prog='scipion-otf')
     g = p.add_mutually_exclusive_group()
@@ -608,10 +665,16 @@ def main():
     g.add_argument('--clean', action="store_true",
                    help="Clean Scipion project files/folders.")
     g.add_argument('--continue_2d', action="store_true")
-    g.add_argument('--write_stars', action="store_true",
-                   help="Generate STAR micrographs and particles STAR files.")
+    g.add_argument('--write_stars', default=argparse.SUPPRESS, nargs='*',
+                   help="Generate STAR micrographs and particles STAR files."
+                        "By default, it will get the first CTFfind protocol for ctfs"
+                        "and the Cryolo picking for picking. One can pass a string"
+                        "with the protocol ids for ctfs and/or picking. For example:"
+                        "--write_starts 'ctfs=1524 picking=1711'")
     g.add_argument('--clone_project', nargs=2, metavar=('SRC', 'DST'),
                    help="Clone an existing Scipion project")
+    g.add_argument('--fix_run_links', metavar='RUNS_SRC',
+                   help="Fix links of Runs of this project from another one.")
 
     args = p.parse_args()
 
@@ -622,16 +685,22 @@ def main():
     elif args.restart_rankers:
         restart_rankers(cwd)
     elif args.test:
+        project = Project(pw.Config.getDomain(), cwd)
+        project.load()
+        for prot in project.getRuns():
+            print_prot(prot)
         pass  # debugging/testing code
     elif args.clean:
         clean_project(cwd)
-    elif args.write_stars:
-        write_stars(cwd)
+    elif 'write_stars' in args:
+        write_stars(cwd, ids=args.write_stars)
     elif args.continue_2d:
         continue_project(cwd)
     elif args.clone_project:
         src, dst = args.clone_project
         clone_project(src, dst)
+    elif args.fix_run_links:
+        fix_run_links(cwd, args.fix_run_links)
     else:  # by default open the GUI
         from pyworkflow.gui.project import ProjectWindow
         ProjectWindow(cwd).show()

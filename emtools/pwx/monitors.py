@@ -18,6 +18,9 @@ import os
 import time
 from datetime import datetime
 from collections import OrderedDict
+from uuid import uuid4
+
+from emtools.utils import Pretty, Process
 
 import pyworkflow.protocol as pwprot
 
@@ -121,6 +124,14 @@ class SetMonitor(OrderedDict):
         self.lastUpdate = None
         self.streamClosed = None
 
+        # Black list some items to not be monitored again
+        # We are not interested in the items but just skip them from
+        # the processing
+        blacklist = kwargs.get('blacklist', None)
+        if blacklist:
+            for item in blacklist:
+                self[item.getObjId()] = True
+
     def update(self):
         newItems = []
         now = datetime.now()
@@ -129,7 +140,7 @@ class SetMonitor(OrderedDict):
         if not self.lastUpdate or mTime > self.lastUpdate:
             setInstance = self._SetClass(filename=self._filename)
             setInstance.loadAllProperties()
-            for item in setInstance:
+            for item in setInstance.iterItems():
                 iid = item.getObjId()
                 if iid not in self:
                     itemClone = item.clone()
@@ -147,3 +158,66 @@ class SetMonitor(OrderedDict):
             for ni in self.update():
                 yield ni
             time.sleep(sleep)
+
+    def iterProtocolInput(self, prot, label, waitSecs=60):
+        """ Keep monitoring of an input set and yield new items.
+        Useful for streaming processing.
+        """
+        # If there are already some output movies, added them to avoid
+        # re-processing them
+        if len(self):
+            prot.info(f"Existing output: {len(self)} {label}")
+        else:
+            prot.info(f"No output {label}.")
+
+        for newMovie in self.newItems(sleep=waitSecs):
+            yield newMovie
+
+        prot.info(f"No more movies, stream closed. Total: {len(self)}")
+
+
+class BatchManager:
+    """ Class used to generate and handle creation of item batch
+    for streaming/parallel processing.
+    """
+    def __init__(self, batchSize, inputItemsIterator, workingPath):
+        self._items = inputItemsIterator
+        self._batchSize = batchSize
+        self._batchCount = 0
+        self._workingPath = workingPath
+
+    def generate(self):
+        """ Generate batches based on the input items. """
+        def _createBatch(items):
+            batch_id = str(uuid4())
+            batch_path = os.path.join(self._workingPath, batch_id)
+            ts = Pretty.now()
+
+            print(f"{ts}: Creating batch: {batch_path}")
+            Process.system(f"rm -rf '{batch_path}'")
+            Process.system(f"mkdir '{batch_path}'")
+
+            for item in items:
+                fn = item.getFileName()
+                baseName = os.path.basename(fn)
+                os.symlink(os.path.abspath(fn),
+                           os.path.join(batch_path, baseName))
+            self._batchCount += 1
+            return {
+                'items': items,
+                'id': batch_id,
+                'path': batch_path,
+                'index': self._batchCount
+            }
+
+        items = []
+
+        for item in self._items:
+            items.append(item)
+
+            if len(items) == self._batchSize:
+                yield _createBatch(items)
+                items = []
+
+        if items:
+            yield _createBatch(items)

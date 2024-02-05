@@ -199,12 +199,13 @@ class DataFiles:
 
 class MovieFiles(DataFiles):
     """ Extension of DataFiles that counts also movie files. """
-    def __init__(self, moviesSuffix='fractions.tiff', **kwargs):
+    def __init__(self, **kwargs):
         DataFiles.__init__(self, filters=[self.is_movie], **kwargs)
-        self._moviesSuffix = 'fractions.tiff'
+        self._moviesSuffix = kwargs.get('moviesSuffix',
+                                        ['fractions.tiff', '.eer'])
 
     def is_movie(self, fn):
-        return fn.endswith(self._moviesSuffix)
+        return any(fn.endswith(s) for s in self._moviesSuffix)
 
     def info(self):
         """ Return a dict with some info """
@@ -239,6 +240,6 @@ class MovieFiles(DataFiles):
     def total_movies(self):
         return self.counters[1].total
 
-    def print(self):
-        DataFiles.print(self)
+    def print(self, sort=None):
+        DataFiles.print(self, sort=sort)
         self.counters[1].print('movie')

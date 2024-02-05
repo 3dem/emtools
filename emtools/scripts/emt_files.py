@@ -24,11 +24,11 @@ from pprint import pprint
 import numpy as np
 
 from emtools.utils import Process, Color, Path, Timer, Pretty
-from emtools.metadata import EPU, DataFiles
+from emtools.metadata import EPU, MovieFiles
 
 
 def statsDir(folder, sort):
-    df = DataFiles(filters=[lambda fn: fn.endswith('fractions.tiff')])
+    df = MovieFiles()
     df.scan(folder)
     df.print(sort=sort)
     df.counters[1].print('movie')
