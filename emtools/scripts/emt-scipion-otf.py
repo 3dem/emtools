@@ -23,6 +23,7 @@ import ast
 import time
 from collections import OrderedDict
 import datetime as dt
+import re
 
 from emtools.utils import Process, Color, System, Pipeline
 from emtools.metadata import EPU, SqliteFile, StarFile, Table
@@ -230,7 +231,6 @@ def run2DPipeline(wf, protExtract):
 
             lastMt = mt
 
-
     def _run2D(batch):
         protRelion2D = batch['prot']
         wf.launchProtocol(protRelion2D, wait=True)
@@ -291,11 +291,14 @@ def create_project(workingDir):
 
     acq = opts['acquisition']
     picking = opts.get('picking', {})
+    gain = acq.get('gain', None)
 
     wf = Workflow(project)
 
-    moviesFolder = _path('data', 'Images-Disc1')
-    moviesPattern = "GridSquare_*/Data/FoilHole_*_fractions.tiff"
+    moviesFolder = _path('data/')
+    moviesPattern = acq['images_pattern']
+
+    isEER = moviesPattern.endswith('.eer')
 
     protImport = wf.createProtocol(
         'pwem.protocols.ProtImportMovies',
@@ -310,20 +313,43 @@ def create_project(workingDir):
         sphericalAberration=acq['cs'],
         doseInitial=0.0,
         dosePerFrame=acq['dose'],
-        gainFile="gain.mrc",
+        gainFile=gain,
         dataStreaming=True
     )
-    #protImport = wf.launchProtocol(protImport, wait={OUT_MOVS: 1})
+
     wf.launchProtocol(protImport, wait={OUT_MOVS: 1})
+
+    mcInputProt = protImport
+    patchX, patchY = 7, 5
+
+    if isEER:
+        # Launch relion - compress movie
+        # and calculate the grouping paramters to get
+        # dose close to 1 e/A2
+        groups = int(1 / float(acq['dose']))
+        protCompress = wf.createProtocol(
+            'relion.protocols.ProtRelionCompressMoviesTasks',
+            objLabel='compress to tiff',
+            eerGroup=groups,
+            eerSampling=0,
+            numberOfThreads=3,
+            streamingBatchSize=16
+        )
+        _setPointer(protCompress.inputMovies, protImport, 'outputMovies')
+        wf.launchProtocol(protCompress, wait={OUT_MOVS: 1})
+        mcInputProt = protCompress
+        # Assuming square images in EER, we could read dimensions
+        patchX, patchY = 5, 5
+
     protMc = wf.createProtocol(
         'motioncorr.protocols.ProtMotionCorrTasks',
         objLabel='motioncor',
-        patchX=7, patchY=5,
+        patchX=patchX, patchY=patchY,
         numberOfThreads=1,
         streamingBatchSize=16,
         gpuList=' '.join(str(g) for g in params['mcGpus'])
     )
-    _setPointer(protMc.inputMovies, protImport, 'outputMovies')
+    _setPointer(protMc.inputMovies, mcInputProt, 'outputMovies')
     wf.launchProtocol(protMc, wait={OUT_MICS: 8})
 
     protCTF = wf.createProtocol(
@@ -417,23 +443,50 @@ def continue_project(workingDir):
     run2DPipeline(wf, protExtract)
 
 
-def restart(workingDir, ids):
+def restart(workingDir, ids, attrStr):
     """ Restart one or more protocols. """
-    print(f"To relaunch {ids}")
+    print(f"Re-launching protocols: {ids}")
+    if len(ids) > 1 and attrStr:
+        raise Exception("--restart_attrs is only allowed when re-running a "
+                        "single protocol.")
+
     project = Project(pw.Config.getDomain(), workingDir)
     project.load()
 
-    all_protocols = [2, 88, 198, 262, 318]
-
-    for protId in ids: 
+    for protId in ids:
         prot = project.getProtocol(protId)
         clsName = prot.getClassName()
         print(f"- {prot.getObjId()}: {clsName}")
         print("\t * Stopping...")
         project.stopProtocol(prot)
         print("\t * Re-running...")
+        if attrStr:
+            attrs = re.split(';|,|\*|\s+|\n', attrStr)
+            for av in attrs:
+                if value := av.strip():
+                    a, v = value.split("=")
+                    print(f"Setting {a}={v}")
+                    prot.setAttributeValue(a, v)
+
         project.launchProtocol(prot, force=True)
         time.sleep(30)
+
+
+def print_protocol(workingDir, protId):
+    """ Restart one or more protocols. """
+    print(f">>> Inspecting protocol: {protId}")
+    project = Project(pw.Config.getDomain(), workingDir)
+    project.load()
+
+    if protId == 'all':
+        for prot in project.getRuns(iterate=True):
+            clsName = prot.getClassName()
+            print(f"- {prot.getObjId():>8} {prot.getStatus():<10} {clsName}")
+    else:
+        prot = project.getProtocol(int(protId))
+        if prot is None:
+            raise Exception(f"There is no protocol with ID={protId}")
+        prot.printObjDict()
 
 
 def restart_rankers(workingDir):
@@ -658,6 +711,7 @@ def main():
                             "'scipion' folder there.")
     g.add_argument('--restart', nargs="+", type=int,
                    help="Restart one or more protocols. ")
+
     g.add_argument('--restart_rankers', action='store_true',
                    help="Restart failed ranker jobs. ")
     g.add_argument('--test', action='store_true',
@@ -675,13 +729,21 @@ def main():
                    help="Clone an existing Scipion project")
     g.add_argument('--fix_run_links', metavar='RUNS_SRC',
                    help="Fix links of Runs of this project from another one.")
+    g.add_argument('--print_protocol', '-p',
+                   help="Print the values of a given protocol.")
 
+    p.add_argument('--restart_attrs', default='',
+                   help="String defining attributes to modify. "
+                        "It can contain multiple attributes separated by "
+                        "comma or space. Examples:\n"
+                        "   --restart_attrs 'x=1 y=2'\n"
+                        "   --restart_attrs x=1,y=2.")
     args = p.parse_args()
 
     if args.create:
         create_project(cwd)
     elif args.restart:
-        restart(cwd, args.restart)
+        restart(cwd, args.restart, args.restart_attrs)
     elif args.restart_rankers:
         restart_rankers(cwd)
     elif args.test:
@@ -701,6 +763,8 @@ def main():
         clone_project(src, dst)
     elif args.fix_run_links:
         fix_run_links(cwd, args.fix_run_links)
+    elif protId := args.print_protocol:
+        print_protocol(cwd, protId)
     else:  # by default open the GUI
         from pyworkflow.gui.project import ProjectWindow
         ProjectWindow(cwd).show()
