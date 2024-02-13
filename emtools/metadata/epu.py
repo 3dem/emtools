@@ -105,12 +105,16 @@ class EPU:
             parts = os.path.basename(movieName).split('_Data_')
         else:
             parts = Path.splitall(movieName)
+
         for p in parts:
             if p.startswith('GridSquare_'):
                 loc['gs'] = p
+            elif p.startswith('Images-Disc1_GridSquare_'):
+                loc['gs'] = p.replace('Images-Disc1_', '')
             elif p.startswith('FoilHole_'):
                 parts = p.split('_')
                 loc['fh'] = f'{parts[0]}_{parts[1]}'
+
         return loc
 
     @staticmethod
@@ -167,12 +171,16 @@ class EPU:
                           'folder': gsFolder,
                           'image': 'None',
                           'xml': 'None'}
-                for fn in os.listdir(os.path.join(self._rootFolder, gsFolder)):
-                    if fn.startswith('GridSquare'):
-                        if fn.endswith('.jpg'):
-                            values['image'] = fn
-                        elif fn.endswith('.xml'):
-                            values['xml'] = fn
+                gsPath = os.path.join(self._rootFolder, gsFolder)
+                if os.path.exists(gsPath):
+                    for fn in os.listdir(gsPath):
+                        if fn.startswith('GridSquare'):
+                            if fn.endswith('.jpg'):
+                                values['image'] = fn
+                            elif fn.endswith('.xml'):
+                                values['xml'] = fn
+                else:
+                    print(f"Missing folder: {gsPath}")
                 self.gsDict[gridSquare] = self.gsTable.addRowValues(**values)
 
             mtime = movieStat.st_mtime
