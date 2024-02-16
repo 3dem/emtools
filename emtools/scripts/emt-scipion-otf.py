@@ -307,7 +307,7 @@ def create_project(workingDir):
         filesPattern=moviesPattern,
         samplingRateMode=0,
         samplingRate=acq['pixel_size'],
-        magnification=130000,
+        magnification=acq['magnification'],
         scannedPixelSize=7.0,
         voltage=acq['voltage'],
         sphericalAberration=acq['cs'],
@@ -443,33 +443,28 @@ def continue_project(workingDir):
     run2DPipeline(wf, protExtract)
 
 
-def restart(workingDir, ids, attrStr):
+def restart(workingDir, args):
     """ Restart one or more protocols. """
-    print(f"Re-launching protocols: {ids}")
-    if len(ids) > 1 and attrStr:
-        raise Exception("--restart_attrs is only allowed when re-running a "
-                        "single protocol.")
+    protId = int(args[0])
+    print(f"Re-launching protocol: {protId}")
 
     project = Project(pw.Config.getDomain(), workingDir)
     project.load()
 
-    for protId in ids:
-        prot = project.getProtocol(protId)
-        clsName = prot.getClassName()
-        print(f"- {prot.getObjId()}: {clsName}")
-        print("\t * Stopping...")
-        project.stopProtocol(prot)
-        print("\t * Re-running...")
-        if attrStr:
-            attrs = re.split(';|,|\*|\s+|\n', attrStr)
-            for av in attrs:
-                if value := av.strip():
-                    a, v = value.split("=")
-                    print(f"Setting {a}={v}")
-                    prot.setAttributeValue(a, v)
+    prot = project.getProtocol(protId)
+    clsName = prot.getClassName()
+    print(f"- {prot.getObjId()}: {clsName}")
+    print("\t * Stopping...")
+    project.stopProtocol(prot)
+    print("\t * Re-running...")
 
-        project.launchProtocol(prot, force=True)
-        time.sleep(30)
+    for av in args[1:]:
+        if value := av.strip():
+            a, v = value.split("=")
+            print(f"Setting {a}={v}")
+            prot.setAttributeValue(a, v)
+
+    project.launchProtocol(prot, force=True)
 
 
 def print_protocol(workingDir, protId):
@@ -709,8 +704,11 @@ def main():
                        help="Create a new Scipion project in the working "
                             "directory. This will overwrite any existing "
                             "'scipion' folder there.")
-    g.add_argument('--restart', nargs="+", type=int,
-                   help="Restart one or more protocols. ")
+    g.add_argument('--restart', nargs="+",
+                   help="Restart one protocol, optionally setting some "
+                        "attributes. "
+                        "Examples: --restart 193 gpuList='0 1'"
+                        "")
 
     g.add_argument('--restart_rankers', action='store_true',
                    help="Restart failed ranker jobs. ")
@@ -732,18 +730,12 @@ def main():
     g.add_argument('--print_protocol', '-p',
                    help="Print the values of a given protocol.")
 
-    p.add_argument('--restart_attrs', default='',
-                   help="String defining attributes to modify. "
-                        "It can contain multiple attributes separated by "
-                        "comma or space. Examples:\n"
-                        "   --restart_attrs 'x=1 y=2'\n"
-                        "   --restart_attrs x=1,y=2.")
     args = p.parse_args()
 
     if args.create:
         create_project(cwd)
     elif args.restart:
-        restart(cwd, args.restart, args.restart_attrs)
+        restart(cwd, args.restart)
     elif args.restart_rankers:
         restart_rankers(cwd)
     elif args.test:
