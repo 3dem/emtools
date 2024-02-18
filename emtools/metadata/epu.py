@@ -272,10 +272,12 @@ class EPU:
                     folder, file = os.path.split(fn)
                     dstFolder = os.path.join(self.backupFolder, _rel(folder))
                     dstFile = os.path.join(dstFolder, file)
+
                     if not os.path.exists(dstFile):
+                        self.pl.logger.info(f"Missing file: {dstFile}")
                         if not os.path.exists(dstFolder):
                             self.pl.mkdir(dstFolder)
-                        self.pl.cp(fn, dstFolder)
+                        self.pl.cp(fn, dstFile)
 
             def _backup_pair(jpgFn):
                 """ Count files and size. """
