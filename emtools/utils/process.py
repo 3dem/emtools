@@ -93,20 +93,25 @@ class Process:
 
     class Logger:
         """ Use a logger to log command that are executed via os.system. """
-        def __init__(self, logger=None):
+        def __init__(self, logger=None, only_log=False,
+                     format='%(asctime)s %(levelname)s %(message)s'):
             # If not logger, create one using stdout
             if logger is None:
                 handler = logging.StreamHandler(stream=sys.stdout)
-                formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
+                formatter = logging.Formatter(format)
                 handler.setFormatter(formatter)
                 logger = logging.getLogger('stdout')
                 logger.setLevel(logging.DEBUG)
                 logger.addHandler(handler)
 
+            # Shortcuts
             self.logger = logger
+            self.info = logger.info
+            self.error = logger.error
+            self.warning = logger.warning
 
             # If True, only log bug not make the system call
-            self.system_only_log = False
+            self.system_only_log = only_log
 
         def system(self, cmd, retry=None):
             """ Execute a command and log it.

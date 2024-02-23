@@ -14,6 +14,8 @@
 # * GNU General Public License for more details.
 # *
 # **************************************************************************
+
+import sys
 import json
 import os.path
 import argparse
@@ -21,6 +23,7 @@ import ast
 import time
 from collections import OrderedDict
 import datetime as dt
+import re
 
 from emtools.utils import Process, Color, System, Pipeline
 from emtools.metadata import EPU, SqliteFile, StarFile, Table
@@ -228,7 +231,6 @@ def run2DPipeline(wf, protExtract):
 
             lastMt = mt
 
-
     def _run2D(batch):
         protRelion2D = batch['prot']
         wf.launchProtocol(protRelion2D, wait=True)
@@ -289,11 +291,14 @@ def create_project(workingDir):
 
     acq = opts['acquisition']
     picking = opts.get('picking', {})
+    gain = acq.get('gain', None)
 
     wf = Workflow(project)
 
-    moviesFolder = _path('data', 'Images-Disc1')
-    moviesPattern = "GridSquare_*/Data/FoilHole_*_fractions.tiff"
+    moviesFolder = _path('data/')
+    moviesPattern = acq['images_pattern']
+
+    isEER = moviesPattern.endswith('.eer')
 
     protImport = wf.createProtocol(
         'pwem.protocols.ProtImportMovies',
@@ -302,26 +307,49 @@ def create_project(workingDir):
         filesPattern=moviesPattern,
         samplingRateMode=0,
         samplingRate=acq['pixel_size'],
-        magnification=130000,
+        magnification=acq['magnification'],
         scannedPixelSize=7.0,
         voltage=acq['voltage'],
         sphericalAberration=acq['cs'],
         doseInitial=0.0,
         dosePerFrame=acq['dose'],
-        gainFile="gain.mrc",
+        gainFile=gain,
         dataStreaming=True
     )
-    #protImport = wf.launchProtocol(protImport, wait={OUT_MOVS: 1})
+
     wf.launchProtocol(protImport, wait={OUT_MOVS: 1})
+
+    mcInputProt = protImport
+    patchX, patchY = 7, 5
+
+    if isEER:
+        # Launch relion - compress movie
+        # and calculate the grouping paramters to get
+        # dose close to 1 e/A2
+        groups = int(1 / float(acq['dose']))
+        protCompress = wf.createProtocol(
+            'relion.protocols.ProtRelionCompressMoviesTasks',
+            objLabel='compress to tiff',
+            eerGroup=groups,
+            eerSampling=0,
+            numberOfThreads=3,
+            streamingBatchSize=16
+        )
+        _setPointer(protCompress.inputMovies, protImport, 'outputMovies')
+        wf.launchProtocol(protCompress, wait={OUT_MOVS: 1})
+        mcInputProt = protCompress
+        # Assuming square images in EER, we could read dimensions
+        patchX, patchY = 5, 5
+
     protMc = wf.createProtocol(
         'motioncorr.protocols.ProtMotionCorrTasks',
         objLabel='motioncor',
-        patchX=7, patchY=5,
+        patchX=patchX, patchY=patchY,
         numberOfThreads=1,
         streamingBatchSize=16,
         gpuList=' '.join(str(g) for g in params['mcGpus'])
     )
-    _setPointer(protMc.inputMovies, protImport, 'outputMovies')
+    _setPointer(protMc.inputMovies, mcInputProt, 'outputMovies')
     wf.launchProtocol(protMc, wait={OUT_MICS: 8})
 
     protCTF = wf.createProtocol(
@@ -415,24 +443,45 @@ def continue_project(workingDir):
     run2DPipeline(wf, protExtract)
 
 
-def restart(workingDir, ids):
+def restart(workingDir, args):
     """ Restart one or more protocols. """
-    print(f"To relaunch {ids}")
+    protId = int(args[0])
+    print(f"Re-launching protocol: {protId}")
+
     project = Project(pw.Config.getDomain(), workingDir)
     project.load()
 
-    all_protocols = [2, 88, 198, 262, 318]
+    prot = project.getProtocol(protId)
+    clsName = prot.getClassName()
+    print(f"- {prot.getObjId()}: {clsName}")
+    print("\t * Stopping...")
+    project.stopProtocol(prot)
+    print("\t * Re-running...")
 
-    for protId in all_protocols:
-        prot = project.getProtocol(protId)
-        clsName = prot.getClassName()
-        print(f"- {prot.getObjId()}: {clsName}")
-        if prot.getObjId() in ids:
-            print("\t * Stopping...")
-            project.stopProtocol(prot)
-            print("\t * Re-running...")
-            project.launchProtocol(prot, force=True)
-            time.sleep(30)
+    for av in args[1:]:
+        if value := av.strip():
+            a, v = value.split("=")
+            print(f"Setting {a}={v}")
+            prot.setAttributeValue(a, v)
+
+    project.launchProtocol(prot, force=True)
+
+
+def print_protocol(workingDir, protId):
+    """ Restart one or more protocols. """
+    print(f">>> Inspecting protocol: {protId}")
+    project = Project(pw.Config.getDomain(), workingDir)
+    project.load()
+
+    if protId == 'all':
+        for prot in project.getRuns(iterate=True):
+            clsName = prot.getClassName()
+            print(f"- {prot.getObjId():>8} {prot.getStatus():<10} {clsName}")
+    else:
+        prot = project.getProtocol(int(protId))
+        if prot is None:
+            raise Exception(f"There is no protocol with ID={protId}")
+        prot.printObjDict()
 
 
 def restart_rankers(workingDir):
@@ -544,21 +593,107 @@ def write_coordinates(micStarFn, prot):
         sf.writeTable('coordinate_files', coordsMicTable)
 
 
-def write_stars(workingDir):
+def print_prot(prot, label='Protocol'):
+    print(f">>> {label} {prot.getObjId():>6}   {prot.getClassName():<30} {prot.getRunName()}")
+
+
+def write_stars(workingDir, ids=None):
     """ Restart one or more protocols. """
+    print("ids", ids)
+
+    def _get_keys(tokens):
+        for t in tokens:
+            parts = t.split('=')
+            yield parts[0], int(parts[1])
+
     project = Project(pw.Config.getDomain(), workingDir)
     project.load()
 
-    for prot in project.getRuns():
-        clsName = prot.getClassName()
-        if clsName == 'CistemProtCTFFind':
-            ctfs = prot.outputCTF
-            print(f"- {prot.getObjId()}: {prot.getRunName()} ({clsName})")
-            print(f"            CTFs: {ctfs.getSize()}")
-            write_micrographs_star('micrographs_ctf.star', ctfs)
+    protCtf = None
+    protPicking = None
 
-        elif clsName == 'SphireProtCRYOLOPicking':
-            write_coordinates('coordinates.star', prot)
+    if ids:
+        idsDict = {k: v for k, v in _get_keys(ids)}
+        if 'ctfs' in idsDict:
+            protCtf = project.getProtocol(idsDict['ctfs'])
+        if 'picking' in idsDict:
+            protPicking = project.getProtocol(idsDict['picking'])
+    else:
+        # Default option when running OTF that we export STAR files
+        # from CTFFind and Cryolo runs
+        for prot in project.getRuns():
+            clsName = prot.getClassName()
+            if clsName == 'CistemProtCTFFind':
+                protCtf = prot
+            elif clsName == 'SphireProtCRYOLOPicking':
+                protPicking = prot
+
+    if protCtf:
+        ctfs = protCtf.outputCTF
+        print_prot(protCtf, label='CTF protocol')
+        print(f"            CTFs: {ctfs.getSize()}")
+        write_micrographs_star('micrographs_ctf.star', ctfs)
+
+    if protPicking:
+        print_prot(protPicking, label='Picking protocol')
+        write_coordinates('coordinates.star', protPicking)
+
+
+def clone_project(src, dst):
+    """ Clone an existing Scipion project into a new project.
+    Existing run folders will not be copied but linked to save space. """
+
+    #for r in /jude/facility/appdpcryoem/ 20231019_Krios01_cdk16_data_1_OTF/Runs/ *; do echo $r; ln -s $r; done
+    #rsync - av - -exclude = {'EPU', 'Coordinates', 'Runs', 'Tmp'} / jude / facility / appdpcryoem / 20231019
+    if not os.path.exists(os.path.join(src, 'project.sqlite')):
+        raise Exception("Missing 'project.sqlite' from src folder, "
+                        "please provide a valid project folder")
+
+    srcRuns = os.path.join(src, 'Runs')
+    runs = os.listdir(srcRuns)
+    if not runs:
+        raise Exception("There are no runs in src folder, "
+                        "please provide a valid project folder")
+
+    projectName = os.path.basename(src)
+    cloneFolder = os.path.join(dst, projectName)
+
+    dstRuns = os.path.join(cloneFolder, 'Runs')
+    Process.system(f"mkdir -p {dstRuns}")
+    Process.system(f"rsync -av --exclude={{'EPU','Coordinates','Runs','Tmp','logs'}} {src}/ {cloneFolder}/")
+
+    print("Linking runs...")
+
+    for r in runs:
+        srcR = os.path.join(srcRuns, r)
+        dstR = os.path.join(dstRuns, r)
+        Process.system(f"ln -s {srcR} {dstR}")
+
+
+def fix_run_links(workingDir, srcRuns):
+    dstRuns = os.path.join(workingDir, 'Runs')
+
+    if not os.path.exists(dstRuns):
+        raise Exception("Missing Runs folder")
+
+    if not os.path.exists(srcRuns):
+        raise Exception(f"Source '{srcRuns}' does not exists.")
+
+    if not (srcRuns.endswith('Runs') or srcRuns.endswith('Runs/')):
+        raise Exception(f"Source '{srcRuns}' does not end with 'Runs'")
+
+    rootRuns = os.path.join('Runs', 'runs')
+    logger = Process.Logger(format="%(message)s")
+    logger.rm(rootRuns)
+    logger.system(f"ln -s {srcRuns} {rootRuns}")
+
+    srcRunFolders = os.listdir(srcRuns)
+    print(dstRuns)
+    for fn in os.listdir(dstRuns):
+        f = os.path.join(dstRuns, fn)
+        if os.path.islink(f) and fn in srcRunFolders:
+            os.unlink(f)
+            logger.system(f"cd Runs && ln -s runs/{fn}")
 
 
 def main():
@@ -569,8 +704,12 @@ def main():
                        help="Create a new Scipion project in the working "
                             "directory. This will overwrite any existing "
                             "'scipion' folder there.")
-    g.add_argument('--restart', nargs="+", type=int,
-                   help="Restart one or more protocols. ")
+    g.add_argument('--restart', nargs="+",
+                   help="Restart one protocol, optionally setting some "
+                        "attributes. "
+                        "Examples: --restart 193 gpuList='0 1'"
+                        "")
+
     g.add_argument('--restart_rankers', action='store_true',
                    help="Restart failed ranker jobs. ")
     g.add_argument('--test', action='store_true',
@@ -578,8 +717,18 @@ def main():
     g.add_argument('--clean', action="store_true",
                    help="Clean Scipion project files/folders.")
     g.add_argument('--continue_2d', action="store_true")
-    g.add_argument('--write_stars', action="store_true",
-                   help="Generate STAR micrographs and particles STAR files.")
+    g.add_argument('--write_stars', default=argparse.SUPPRESS, nargs='*',
+                   help="Generate STAR micrographs and particles STAR files."
+                        "By default, it will get the first CTFfind protocol for ctfs"
+                        "and the Cryolo picking for picking. One can pass a string"
+                        "with the protocol ids for ctfs and/or picking. For example:"
+                        "--write_starts 'ctfs=1524 picking=1711'")
+    g.add_argument('--clone_project', nargs=2, metavar=('SRC', 'DST'),
+                   help="Clone an existing Scipion project")
+    g.add_argument('--fix_run_links', metavar='RUNS_SRC',
+                   help="Fix links of Runs of this project from another one.")
+    g.add_argument('--print_protocol', '-p',
+                   help="Print the values of a given protocol.")
 
     args = p.parse_args()
 
@@ -590,13 +739,24 @@ def main():
     elif args.restart_rankers:
         restart_rankers(cwd)
     elif args.test:
+        project = Project(pw.Config.getDomain(), cwd)
+        project.load()
+        for prot in project.getRuns():
+            print_prot(prot)
         pass  # debugging/testing code
     elif args.clean:
         clean_project(cwd)
-    elif args.write_stars:
-        write_stars(cwd)
+    elif 'write_stars' in args:
+        write_stars(cwd, ids=args.write_stars)
     elif args.continue_2d:
         continue_project(cwd)
+    elif args.clone_project:
+        src, dst = args.clone_project
+        clone_project(src, dst)
+    elif args.fix_run_links:
+        fix_run_links(cwd, args.fix_run_links)
+    elif protId := args.print_protocol:
+        print_protocol(cwd, protId)
     else:  # by default open the GUI
         from pyworkflow.gui.project import ProjectWindow
         ProjectWindow(cwd).show()

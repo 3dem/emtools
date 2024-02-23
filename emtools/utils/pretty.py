@@ -75,22 +75,21 @@ class Pretty:
         return dt if f is None else Pretty.datetime(dt, **kwargs)
 
     @staticmethod
-    def elapsed(timestamp):
+    def elapsed(timestamp, now=None):
         """
         Get a datetime object or a int() Epoch timestamp and return a
         pretty string like 'an hour ago', 'Yesterday', '3 months ago',
         'just now', etc
         """
-        now = datetime.now()
+        now = now or datetime.now()
         if isinstance(timestamp, datetime):
-            dt = timestamp
+            ts = timestamp
         elif type(timestamp) in [int, float, str]:
-            dt = datetime.fromtimestamp(int(timestamp))
-        elif type(timestamp) is float:
-            diff = now - datetime.fromtimestamp(int(timestamp))
-        elif isinstance(timestamp, datetime):
-            diff = now - timestamp
+            ts = datetime.fromtimestamp(int(timestamp))
+        else:
+            raise Exception(f"Can not convert type {type(timestamp)} to timestamp")
 
+        diff = now - ts
         second_diff = diff.seconds
         day_diff = diff.days
 
@@ -114,9 +113,17 @@ class Pretty:
             return "Yesterday"
         if day_diff < 7:
             return str(day_diff) + " days ago"
+
+        def _plural(div, noun):
+            v = int(day_diff / div)
+            s = 's' if v > 1 else ''
+            return f"{v} {noun}{s} ago"
+
         if day_diff < 31:
-            return str(int(day_diff / 7)) + " weeks ago"
+            return _plural(7, 'week')
         if day_diff < 365:
-            return str(int(day_diff / 30)) + " months ago"
-        return str(int(day_diff / 365)) + " years ago"
+            return _plural(30, 'month')
+
+        return _plural(365, 'year')
+
 

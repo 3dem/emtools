@@ -25,6 +25,7 @@ from .misc import MovieFiles
 
 
 class EPU:
+    MOVIES_SUFFICES = ['_fractions.tiff', '_EER.eer']
     @staticmethod
     def get_acquisition(movieXmlFn):
         """ Parse acquisition parameters from EPU's xml movie file. """
@@ -83,8 +84,8 @@ class EPU:
             for fn in files:
                 f = os.path.join(root, fn)
                 # Check existing movies first
-                if fn.startswith('FoilHole_') and fn.endswith('_fractions.tiff'):
-                    xmlFn = f.replace('_fractions.tiff', '.xml')
+
+                if xmlFn := EPU.get_movie_xml(f):
                     if os.path.exists(xmlFn):
                         x, y = EPU.parse_beam_shifts(xmlFn)
                         yield os.path.basename(fn), x, y
@@ -104,13 +105,30 @@ class EPU:
             parts = os.path.basename(movieName).split('_Data_')
         else:
             parts = Path.splitall(movieName)
+
         for p in parts:
             if p.startswith('GridSquare_'):
                 loc['gs'] = p
+            elif p.startswith('Images-Disc1_GridSquare_'):
+                loc['gs'] = p.replace('Images-Disc1_', '')
             elif p.startswith('FoilHole_'):
                 parts = p.split('_')
                 loc['fh'] = f'{parts[0]}_{parts[1]}'
+
         return loc
+
+    @staticmethod
+    def is_movie_fn(fn):
+        return (fn.startswith('FoilHole_') and
+                any(fn.endswith(s) for s in EPU.MOVIES_SUFFICES))
+
+    @staticmethod
+    def get_movie_xml(fn):
+        if EPU.is_movie_fn(fn):
+            for s in EPU.MOVIES_SUFFICES:
+                if fn.endswith(s):
+                    return fn.replace(s, '.xml')
+        return ''
 
     class Data:
         """ Class to keep track of EPU files and associated metadata.
@@ -153,12 +171,16 @@ class EPU:
                           'folder': gsFolder,
                           'image': 'None',
                           'xml': 'None'}
-                for fn in os.listdir(os.path.join(self._rootFolder, gsFolder)):
-                    if fn.startswith('GridSquare'):
-                        if fn.endswith('.jpg'):
-                            values['image'] = fn
-                        elif fn.endswith('.xml'):
-                            values['xml'] = fn
+                gsPath = os.path.join(self._rootFolder, gsFolder)
+                if os.path.exists(gsPath):
+                    for fn in os.listdir(gsPath):
+                        if fn.startswith('GridSquare'):
+                            if fn.endswith('.jpg'):
+                                values['image'] = fn
+                            elif fn.endswith('.xml'):
+                                values['xml'] = fn
+                else:
+                    print(f"Missing folder: {gsPath}")
                 self.gsDict[gridSquare] = self.gsTable.addRowValues(**values)
 
             mtime = movieStat.st_mtime
@@ -170,7 +192,7 @@ class EPU:
                 'beamShiftY': -9999.0,
                 'timeStamp': mtime
             }
-            xmlFn = movieFn.replace('_fractions.tiff', '.xml')
+            xmlFn = EPU.get_movie_xml(movieFn)
             if os.path.exists(xmlFn):
                 x, y = EPU.parse_beam_shifts(xmlFn)
                 if self._acq is None:
@@ -250,10 +272,12 @@ class EPU:
                     folder, file = os.path.split(fn)
                     dstFolder = os.path.join(self.backupFolder, _rel(folder))
                     dstFile = os.path.join(dstFolder, file)
+
                     if not os.path.exists(dstFile):
+                        self.pl.logger.info(f"Missing file: {dstFile}")
                         if not os.path.exists(dstFolder):
                             self.pl.mkdir(dstFolder)
-                        self.pl.cp(fn, dstFolder)
+                        self.pl.cp(fn, dstFile)
 
             def _backup_pair(jpgFn):
                 """ Count files and size. """
@@ -274,7 +298,7 @@ class EPU:
                             _backup_pair(fn)
                         # Check existing movies first
                         if f.startswith('FoilHole_'):
-                            if f.endswith('_fractions.tiff'):
+                            if EPU.is_movie_fn(f):
                                 movies.append((fn, s))
                             elif f.endswith('.xml'):
                                 _backup(fn)

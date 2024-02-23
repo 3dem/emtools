@@ -19,6 +19,8 @@ submit_parser.add_argument('template_file',
 lsf_parser.add_argument('queue_name', nargs='?', help="")
 lsf_parser.add_argument('--jobs', '-j', nargs='?',
                         default=argparse.SUPPRESS)
+lsf_parser.add_argument('--json', action='store_true')
+lsf_parser.add_argument('--debug', action='store_true')
 
 args = parser.parse_args()
 
@@ -34,15 +36,17 @@ elif cmd == "submit":
     submit_script(args.template_file)
 
 elif cmd == 'lsf':
-    from .lsf import show_queues, show_jobs
+    from .lsf import LSF
+
+    lsf = LSF(debug=args.debug)
 
     if hasattr(args, 'jobs'):
         if args.jobs:
-            show_jobs(user=args.jobs)
+            lsf.show_jobs(user=args.jobs)
         else:
-            show_jobs(queue=args.queue_name)
+            lsf.show_jobs(queue=args.queue_name)
     else:
-        show_queues(args.queue_name)
+        lsf.show_queues(args.queue_name, outputJson=args.json)
 
 else:
     print("command: ", args.command)
