@@ -431,7 +431,7 @@ def continue_project(workingDir):
         print(f"Run {run.getObjId()}: {clsName}")
         if clsName == 'ProtRelionExtractParticles':
             protExtract = run
-        elif clsName == 'SphireProtCRYOLOPicking':
+        elif clsName.startswith('SphireProtCRYOLOPicking'):
             protCryolo = run
 
     if not protExtract.isActive():
@@ -629,7 +629,11 @@ def write_stars(workingDir, ids=None):
                 protPicking = prot
 
     if protCtf:
-        ctfs = protCtf.outputCTF
+        if hasattr(protCtf, 'outputCTF'):
+            ctfs = protCtf.outputCTF
+        else: 
+            ctfs = protCtf.outputSet  # case of union, FIXME: validate other non-valid
+
         print_prot(protCtf, label='CTF protocol')
         print(f"            CTFs: {ctfs.getSize()}")
         write_micrographs_star('micrographs_ctf.star', ctfs)
