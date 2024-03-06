@@ -31,6 +31,8 @@ def parse(inputDir, outputStar):
         print("\rParsed: ", i, end="")
         out.writeRow(t.Row(movieBaseName=base, beamShiftX=x, beamShiftY=y))
 
+    print()
+    
     if outputStar:
         out.close()
 
