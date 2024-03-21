@@ -185,6 +185,10 @@ class DataFiles:
     def total_files(self):
         return self.counters[0].total
 
+    @property
+    def total_size(self):
+        return self.counters[0].total_size
+
     def __contains__(self, filename):
         fn = filename.replace(self.root, '')
         return fn in self._index_files

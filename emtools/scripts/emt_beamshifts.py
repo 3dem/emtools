@@ -32,7 +32,7 @@ def parse(inputDir, outputStar):
         out.writeRow(t.Row(movieBaseName=base, beamShiftX=x, beamShiftY=y))
 
     print()
-    
+
     if outputStar:
         out.close()
 
