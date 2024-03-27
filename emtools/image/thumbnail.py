@@ -47,6 +47,7 @@ class Thumbnail:
         self.scale = 1.0
         self.output_format = kwargs.get('output_format', None)
         self.min_max = kwargs.get('min_max', None)
+        self.std_threshold = kwargs.get('std_threshold', 0)
 
 
     def __format(self, pil_img):
@@ -98,15 +99,26 @@ class Thumbnail:
         return encoded
 
     def from_array(self, imageArray):
-        # imean = imageArray.mean()
-        # isd = imageArray.std()
+
         if self.min_max:
             iMin, iMax = self.min_max
         else:
-            iMax = imageArray.max()  # min(imean + 10 * isd, imageArray.max())
-            iMin = imageArray.min()  # max(imean - 10 * isd, imageArray.min())
+            if self.std_threshold > 0:
+                array = np.array(imageArray)
+                imean = array.mean()
+                isd = array.std()
+                isdTh = self.std_threshold * isd
+                minTh = imean - isdTh
+                maxTh = imean + isdTh
+                array[array < minTh] = minTh
+                array[array > maxTh] = maxTh
+            else:
+                array = imageArray
 
-        im255 = ((imageArray - iMin) / (iMax - iMin) * 255).astype(np.uint8)
+            iMax = array.max()
+            iMin = array.min()
+
+        im255 = ((array - iMin) / (iMax - iMin) * 255).astype(np.uint8)
 
         pil_img = Image.fromarray(im255)
 
