@@ -140,3 +140,30 @@ class Thumbnail:
 
         return result
 
+    @staticmethod
+    def Micrograph(**kwargs):
+        """ Shortcut method with presets for Micrograph thumbail.
+        All settings can be overwriten with kwargs.
+        """
+        defaults = {
+            'output_format': 'base64',
+            'max_size': (512, 512),
+            'contrast_factor': 0.15,
+            'std_threshold': 1
+        }
+        defaults.update(kwargs)
+        return Thumbnail(**defaults)
+
+    @staticmethod
+    def Psd(**kwargs):
+        """ Shortcut method with presets for PSD thumbails.
+        All settings can be overwriten with kwargs.
+        """
+        defaults = {
+            'output_format': 'base64',
+            'max_size': (128, 128),
+            'contrast_factor': 1
+        }
+        defaults.update(kwargs)
+        return Thumbnail(**defaults)
+
