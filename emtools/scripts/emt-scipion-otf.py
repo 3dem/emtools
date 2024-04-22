@@ -476,7 +476,7 @@ def print_protocol(workingDir, protId):
     if protId == 'all':
         for prot in project.getRuns(iterate=True):
             clsName = prot.getClassName()
-            print(f"- {prot.getObjId():>8} {prot.getStatus():<10} {clsName}")
+            print(f"- {prot.getObjId():>6} {prot.getStatus():<10} {clsName:<30} - {prot.getRunName()}")
     else:
         prot = project.getProtocol(int(protId))
         if prot is None:
@@ -733,6 +733,7 @@ def main():
                    help="Fix links of Runs of this project from another one.")
     g.add_argument('--print_protocol', '-p',
                    help="Print the values of a given protocol.")
+
 
     args = p.parse_args()
 
