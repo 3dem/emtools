@@ -22,6 +22,7 @@
 __author__ = 'Jose Miguel de la Rosa Trevin, Grigory Sharov'
 
 import sys
+import re
 from contextlib import AbstractContextManager
 
 from .table import ColumnList, Table
@@ -36,6 +37,10 @@ class StarFile(AbstractContextManager):
     to queries table's columns or size without parsing all data rows.
 
     """
+
+    # Compile regex to split data lines taking into account string literals
+    _splitRegex = re.compile('\"[^"]*\"|[^"\s]+')
+
     @staticmethod
     def printTable(table, tableName=''):
         w = StarFile(sys.stdout)
@@ -115,7 +120,7 @@ class StarFile(AbstractContextManager):
             self._table.addRow(self.__rowFromValues(self._values))
         else:
             for line in self._iterRowLines():
-                self._table.addRow(self.__rowFromValues(line.split()))
+                self._table.addRow(self.__rowFromValues(self.__split_line(line)))
 
         return self._table
 
@@ -159,7 +164,7 @@ class StarFile(AbstractContextManager):
             for i, line in enumerate(self._iterRowLines()):
                 if i >= start:
                     c += 1
-                    yield self.__rowFromValues(line.split())
+                    yield self.__rowFromValues(self.__split_line(line))
                 if limit and c == limit:
                     break
 
@@ -172,6 +177,11 @@ class StarFile(AbstractContextManager):
 
     def __loadFile(self, inputFile, mode):
         return open(inputFile, mode) if isinstance(inputFile, str) else inputFile
+
+    def __split_line(self, line, default=[]):
+        """ Split a data line taking into account string literals """
+        return self._splitRegex.findall(line) if line else default
+        #return line.split() if line else default
 
     def _loadTableInfo(self, tableName):
         self._findDataLine(tableName)
@@ -191,18 +201,23 @@ class StarFile(AbstractContextManager):
         self._singleRow = not self._foundLoop
 
         if self._foundLoop:
-            values = self._line.split() if self._line else []
+            values = self.__split_line(self._line)
 
         self._colNames = colNames
         self._values = values
 
     def __rowFromValues(self, values):
+        if not values:
+            return None
         try:
             return self._table.Row(*[t(v) for t, v in zip(self._types, values)])
         except Exception as e:
             print("types: ", self._types)
             print("values: ", values)
             raise e
+
+    def __rowFromLine(self, line):
+        return self.__rowFromValues(self.__split_line(line))
 
     def _getRow(self):
         """ Get the next Row, it is None when not more rows. """
@@ -212,7 +227,7 @@ class StarFile(AbstractContextManager):
             self._row = None
         elif result is not None:
             line = self._file.readline().strip()
-            self._row = self.__rowFromValues(line.split()) if line else None
+            self._row = self.__rowFromValues(self.__split_line(line))
 
         return result
 

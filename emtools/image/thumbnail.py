@@ -102,6 +102,7 @@ class Thumbnail:
 
         if self.min_max:
             iMin, iMax = self.min_max
+            array = imageArray
         else:
             if self.std_threshold > 0:
                 array = np.array(imageArray)

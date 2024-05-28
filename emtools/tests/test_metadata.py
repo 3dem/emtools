@@ -162,6 +162,15 @@ class TestStarFile(unittest.TestCase):
             t.toc(f'Counted {size} particles:')
             self.assertEqual(size, nn)
 
+    def test_read_jobstar(self):
+        fn = "/Users/jdela80/projects/Relion/Relion5-Tutorial/MotionCorr/job002/job.star"
+        with StarFile(fn) as sf:
+            print(f"Tables: {sf.getTableNames()}")
+            t = sf.getTable('joboptions_values', guessType=False)
+            values = {row.rlnJobOptionVariable: row.rlnJobOptionValue for row in t}
+
+            print(values)
+
 
 class TestEPU(unittest.TestCase):
     """ Tests for EPU class. """
