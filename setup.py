@@ -79,5 +79,9 @@ setup(
            'emt-beamshifts = emtools.scripts.emt_beamshifts:main',
            'emt-angdist = emtools.scripts.emt_angdist:main'
        ],
+
     },
+    scripts= [
+            'emtools/scripts/emt-scipion-otf.py'
+        ]
 )
