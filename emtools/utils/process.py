@@ -25,7 +25,7 @@ import logging
 
 class Process:
     def __init__(self, *args, **kwargs):
-        """ Create a process using subprocess.run. """
+        """ Create a process using subprocess."""
         self.args = args
         error = ''
         try:
@@ -44,6 +44,8 @@ class Process:
             raise Exception(error)
 
     def lines(self):
+        """ Iterate over the lines of the process output.
+        """
         for line in self.stdout.split('\n'):
             yield line
 
@@ -55,6 +57,14 @@ class Process:
 
     @staticmethod
     def system(cmd, only_print=False, color=None):
+        """ Execute and print a command.
+
+        Args:
+            cmd: Command to be executed.
+            only_print: If true, the command will only be printed and
+                not executed
+            color: Optional color for the command
+        """
         printCmd = cmd if color is None else color(cmd)
         print(printCmd)
         if not only_print:
@@ -63,6 +73,7 @@ class Process:
     @staticmethod
     def ps(program, workingDir=None, children=False):
         """ Inspect processes matching a given program name.
+
         Args:
             program: string matching the program name
             workingDir: if not None, filter processes only with that folder as
@@ -92,7 +103,7 @@ class Process:
         return processes
 
     class Logger:
-        """ Use a logger to log command that are executed via os.system. """
+        """ Use a logger to log commands that are executed via os.system. """
         def __init__(self, logger=None, only_log=False,
                      format='%(asctime)s %(levelname)s %(message)s'):
             # If not logger, create one using stdout
@@ -115,11 +126,13 @@ class Process:
 
         def system(self, cmd, retry=None):
             """ Execute a command and log it.
+
             Args:
                  cmd: Command string to be executed with os.system
                  retry: If not None, it should be the time in seconds
                     after which the command will be re-executed on failure
                     until successful completion.
+
             Return:
                   last exit_status from os.system result
             """
@@ -146,11 +159,11 @@ class Process:
                 self.system(f"mkdir -p '{path}'", retry=retry)
 
         def cp(self, src, dst, retry=None):
-            """ Make a folder path. """
+            """ Copy from src to dst. """
             self.system(f"cp '{src}' '{dst}'", retry=retry)
 
         def mv(self, src, dst, retry=None):
-            """ Make a folder path. """
+            """ Move from src to dst. """
             self.system(f"mv '{src}' '{dst}'", retry=retry)
 
         def rm(self, path):

@@ -163,13 +163,30 @@ class TestStarFile(unittest.TestCase):
             self.assertEqual(size, nn)
 
     def test_read_jobstar(self):
-        fn = "/Users/jdela80/projects/Relion/Relion5-Tutorial/MotionCorr/job002/job.star"
-        with StarFile(fn) as sf:
+        jobStar = testpath('metadata', 'relion5_job002_job.star')
+        if jobStar is None:
+            return
+
+        with StarFile(jobStar) as sf:
             print(f"Tables: {sf.getTableNames()}")
             t = sf.getTable('joboptions_values', guessType=False)
             values = {row.rlnJobOptionVariable: row.rlnJobOptionValue for row in t}
 
-            print(values)
+        expected_values = {
+            'bfactor': '150',
+            'bin_factor': '1',
+            'do_dose_weighting': 'Yes',
+            'do_queue': 'No',
+            'dose_per_frame': '1.277',
+            'eer_grouping': '32',
+            'first_frame_sum': '1',
+            'fn_defect': '""',
+            'fn_gain_ref': 'Movies/gain.mrc',
+            'gain_flip': '"No flipping (0)"'
+        }
+
+        for k, v in expected_values.items():
+            self.assertEqual(v, values[k])
 
 
 class TestEPU(unittest.TestCase):

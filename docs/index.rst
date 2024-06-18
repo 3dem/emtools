@@ -33,8 +33,7 @@ Modules and Classes
     :maxdepth: 2
 
     metadata <metadata/index>
-    utils
-    image
+    utils <utils/index>
 
 
 

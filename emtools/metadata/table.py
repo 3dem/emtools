@@ -136,7 +136,8 @@ class ColumnList:
 
 class Table(ColumnList):
     """
-    Class to hold and manipulate tabular data for EM processing programs.
+        Class to hold and manipulate tabular data.
+
     """
     def __init__(self, columns=None):
         ColumnList.__init__(self, columns)
@@ -244,8 +245,12 @@ class Table(ColumnList):
     def getColumnValues(self, colName):
         """
         Return the values of a given column
-        :param colName: The name of an existing column to retrieve values.
-        :return: A list with all values of that column.
+
+        Args:
+            colName: The name of an existing column to retrieve values.
+
+        Return:
+            A list with all values of that column.
         """
         if colName not in self._columns:
             raise Exception("Not existing column: %s" % colName)
