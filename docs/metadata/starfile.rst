@@ -43,6 +43,8 @@ https://github.com/3dem/em-testdata/blob/main/metadata/run_it025_data.star
     #>>>       items: 4786
     #>>>     columns: 25
 
+    sf.close()
+
 
 The methods used in the previous example (`getTableNames`, `getTableSize`, and `getTableInfo`)
 all inspect the STAR file without fully parsing all rows. This way is much more faster
