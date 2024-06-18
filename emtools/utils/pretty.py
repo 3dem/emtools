@@ -20,6 +20,9 @@ from datetime import datetime
 
 
 class Pretty:
+    """ Helper class for "pretty" string formatting from several input types
+    (e.g. size, dates, timestamps, elapsed, etc.).
+    """
     # Default timestamp
     DATETIME_FORMAT = '%Y-%m-%d %H:%M:%S'
     DATE_FORMAT = '%Y-%m-%d'

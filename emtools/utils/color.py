@@ -26,6 +26,9 @@ UNDERLINE = '\033[4m'
 
 
 class Color:
+    """ Basic helper class to have colored string.
+    Useful for commands and log messages. """
+
     @staticmethod
     def green(msg):
         return f'{OKGREEN}{msg}{ENDC}'

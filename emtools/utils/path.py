@@ -1,15 +1,11 @@
 
 import os
 import time
-from glob import glob
 from datetime import datetime as dt
-from datetime import timedelta
 from collections import OrderedDict
-import numpy as np
 
 from .pretty import Pretty
 from .process import Process
-from .color import Color
 
 
 class Path:
@@ -149,7 +145,7 @@ class Path:
     @staticmethod
     def replaceExt(filename, newExt):
         """ Replace the current path extension(from last .)
-        with a new one. The new one should not contains the ."""
+        with a new one. The new one should not contain the ."""
         return Path.removeExt(filename) + '.' + newExt
 
     @staticmethod

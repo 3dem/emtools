@@ -50,9 +50,11 @@ that parsing rows if not needed. These methods will also create an index of wher
 data blocks are in the file, so if you need to read a data table, it will jump to
 that position in the file.
 
+Reading a Table
+---------------
 
-Iterating over the rows
------------------------
+Iterating over the Table rows
+-----------------------------
 
 In some cases, we just want to iterate over the rows and operate on them one by one.
 In that case, it is not necessary to fully load the whole table in memory. Iteration

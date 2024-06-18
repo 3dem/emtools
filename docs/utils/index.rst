@@ -5,5 +5,7 @@ utils
 .. toctree::
     :maxdepth: 1
 
-    Color, Timer <misc>
-    Process <process>
+    Color, Pretty, Timer <misc>
+    Process, Path, System <process>
+
+

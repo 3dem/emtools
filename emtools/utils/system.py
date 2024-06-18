@@ -23,6 +23,7 @@ index, name, driver_version, temperature.gpu, utilization.gpu [%], utilization.m
 import socket
 import platform
 import psutil
+
 from .process import Process
 
 
@@ -33,6 +34,7 @@ class System:
 
     @staticmethod
     def gpus():
+        """ Return a dictionary with existing GPUs and their properties. """
         gpus = []
         query = Process(System.NVIDIA_SMI_QUERY[0],
                         *System.NVIDIA_SMI_QUERY[1:], doRaise=False)
@@ -69,6 +71,7 @@ class System:
 
     @staticmethod
     def memory():
+        """ Return the total virtual memory of the system. (in Gb) """
         return psutil.virtual_memory().total // (1024 * 1024 * 1024)  # GiB
 
     @staticmethod
@@ -92,4 +95,5 @@ class System:
 
     @staticmethod
     def hostname():
+        """ Return the hostname. """
         return socket.gethostname()

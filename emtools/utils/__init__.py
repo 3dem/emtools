@@ -15,15 +15,16 @@
 # **************************************************************************
 
 from .color import Color
-from .process import Process
 from .pretty import Pretty
-from .path import Path
 from .time import Timer
-from .pipeline import Pipeline
+
+from .process import Process
+from .path import Path
 from .system import System
+
 from .server import JsonTCPServer, JsonTCPClient
 
 
-__all__ = [Color, Process, Pretty, Path, Timer, Pipeline, System,
-           JsonTCPServer, JsonTCPClient]
+__all__ = ["Color", "Pretty", "Timer", "Process", "Path", "System",
+           "JsonTCPServer", "JsonTCPClient"]
 
