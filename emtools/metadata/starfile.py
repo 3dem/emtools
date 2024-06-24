@@ -125,10 +125,13 @@ class StarFile(AbstractContextManager):
         return self._table
 
     def getTableSize(self, tableName):
-        """ Return the number of elements in the given table.
-        This method is much more efficient that parsing the table
-        and getting the size, if the one is only interested in the
-        number of elements in the table.
+        """
+        Return the number of elements in the given table without parsing
+        all the rows of the table.
+
+        If one is only interested in the number of items in a row,
+        this method is much more efficient that parsing all rows in
+        the table.
         """
         self._loadTableInfo(tableName)
         if self._singleRow:
@@ -180,8 +183,10 @@ class StarFile(AbstractContextManager):
 
     def __split_line(self, line, default=[]):
         """ Split a data line taking into account string literals """
-        return self._splitRegex.findall(line) if line else default
-        #return line.split() if line else default
+        if '"' in line:
+            return self._splitRegex.findall(line) if line else default
+
+        return line.split() if line else default
 
     def _loadTableInfo(self, tableName):
         self._findDataLine(tableName)
@@ -313,7 +318,7 @@ class StarFile(AbstractContextManager):
         m = max([len(c) for c in row._fields]) + 5
         format = "_{:<%d} {:>10}\n" % m
         for col, value in row._asdict().items():
-            self._file.write(format.format(col, value))
+            self._file.write(format.format(col, _escapeStrValue(value)))
         self._file.write('\n\n')
 
     def writeHeader(self, tableName, table):
@@ -333,6 +338,8 @@ class StarFile(AbstractContextManager):
         """
         if not self._format:
             self._computeLineFormat([values])
+
+        values = [_escapeStrValue(v) for v in values]
         self._file.write(self._format.format(*values))
 
     def writeRow(self, row):
@@ -393,3 +400,7 @@ def _getFormatStr(v):
     return '.6f' if isinstance(v, float) else ''
 
 
+def _escapeStrValue(v):
+    """ Escape string values by adding quotes if the string
+    is empty or contains spaces. """
+    return '"%s"' % v if isinstance(v, str) and (not v or ' ' in v) else v
