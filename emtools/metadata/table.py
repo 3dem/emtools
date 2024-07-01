@@ -136,8 +136,7 @@ class ColumnList:
 
 class Table(ColumnList):
     """
-        Class to hold and manipulate tabular data.
-
+    Class to hold and manipulate tabular data.
     """
     def __init__(self, columns=None):
         ColumnList.__init__(self, columns)
