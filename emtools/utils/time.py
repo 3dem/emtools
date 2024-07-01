@@ -26,7 +26,9 @@ class Timer(object):
         self.message = message
         self.tic()
 
-    def tic(self):
+    def tic(self, msg=None):
+        if msg:
+            print(msg)
         self._dt = datetime.now()
 
     def getElapsedTime(self):

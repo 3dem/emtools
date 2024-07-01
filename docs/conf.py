@@ -1,4 +1,5 @@
 import datetime as dt
+import emtools
 
 extensions = ['sphinx.ext.autodoc',
               'sphinx.ext.autosectionlabel',
@@ -48,7 +49,8 @@ html_logo = "images/emtools-logo.png"
 #html_logo = "https://github.com/3dem/emhub/wiki/images/emhub-logo-top-gray.svg"
 
 html_context = {
-    'last_updated': dt.datetime.now().date()
+    'last_updated': dt.datetime.now().date(),
+    'emtools_version': emtools.__version__
 }
 
 templates_path = ["templates"]

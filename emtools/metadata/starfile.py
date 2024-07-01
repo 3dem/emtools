@@ -22,6 +22,7 @@
 __author__ = 'Jose Miguel de la Rosa Trevin, Grigory Sharov'
 
 import sys
+import re
 from contextlib import AbstractContextManager
 
 from .table import ColumnList, Table
@@ -36,6 +37,10 @@ class StarFile(AbstractContextManager):
     to queries table's columns or size without parsing all data rows.
 
     """
+
+    # Compile regex to split data lines taking into account string literals
+    _splitRegex = re.compile('\"[^"]*\"|[^"\s]+')
+
     @staticmethod
     def printTable(table, tableName=''):
         w = StarFile(sys.stdout)
@@ -115,15 +120,18 @@ class StarFile(AbstractContextManager):
             self._table.addRow(self.__rowFromValues(self._values))
         else:
             for line in self._iterRowLines():
-                self._table.addRow(self.__rowFromValues(line.split()))
+                self._table.addRow(self.__rowFromValues(self.__split_line(line)))
 
         return self._table
 
     def getTableSize(self, tableName):
-        """ Return the number of elements in the given table.
-        This method is much more efficient that parsing the table
-        and getting the size, if the one is only interested in the
-        number of elements in the table.
+        """
+        Return the number of elements in the given table without parsing
+        all the rows of the table.
+
+        If one is only interested in the number of items in a row,
+        this method is much more efficient that parsing all rows in
+        the table.
         """
         self._loadTableInfo(tableName)
         if self._singleRow:
@@ -159,7 +167,7 @@ class StarFile(AbstractContextManager):
             for i, line in enumerate(self._iterRowLines()):
                 if i >= start:
                     c += 1
-                    yield self.__rowFromValues(line.split())
+                    yield self.__rowFromValues(self.__split_line(line))
                 if limit and c == limit:
                     break
 
@@ -172,6 +180,13 @@ class StarFile(AbstractContextManager):
 
     def __loadFile(self, inputFile, mode):
         return open(inputFile, mode) if isinstance(inputFile, str) else inputFile
+
+    def __split_line(self, line, default=[]):
+        """ Split a data line taking into account string literals """
+        if '"' in line:
+            return self._splitRegex.findall(line) if line else default
+
+        return line.split() if line else default
 
     def _loadTableInfo(self, tableName):
         self._findDataLine(tableName)
@@ -191,18 +206,23 @@ class StarFile(AbstractContextManager):
         self._singleRow = not self._foundLoop
 
         if self._foundLoop:
-            values = self._line.split() if self._line else []
+            values = self.__split_line(self._line)
 
         self._colNames = colNames
         self._values = values
 
     def __rowFromValues(self, values):
+        if not values:
+            return None
         try:
             return self._table.Row(*[t(v) for t, v in zip(self._types, values)])
         except Exception as e:
             print("types: ", self._types)
             print("values: ", values)
             raise e
+
+    def __rowFromLine(self, line):
+        return self.__rowFromValues(self.__split_line(line))
 
     def _getRow(self):
         """ Get the next Row, it is None when not more rows. """
@@ -212,7 +232,7 @@ class StarFile(AbstractContextManager):
             self._row = None
         elif result is not None:
             line = self._file.readline().strip()
-            self._row = self.__rowFromValues(line.split()) if line else None
+            self._row = self.__rowFromValues(self.__split_line(line))
 
         return result
 
@@ -298,7 +318,7 @@ class StarFile(AbstractContextManager):
         m = max([len(c) for c in row._fields]) + 5
         format = "_{:<%d} {:>10}\n" % m
         for col, value in row._asdict().items():
-            self._file.write(format.format(col, value))
+            self._file.write(format.format(col, _escapeStrValue(value)))
         self._file.write('\n\n')
 
     def writeHeader(self, tableName, table):
@@ -318,6 +338,8 @@ class StarFile(AbstractContextManager):
         """
         if not self._format:
             self._computeLineFormat([values])
+
+        values = [_escapeStrValue(v) for v in values]
         self._file.write(self._format.format(*values))
 
     def writeRow(self, row):
@@ -378,3 +400,7 @@ def _getFormatStr(v):
     return '.6f' if isinstance(v, float) else ''
 
 
+def _escapeStrValue(v):
+    """ Escape string values by adding quotes if the string
+    is empty or contains spaces. """
+    return '"%s"' % v if isinstance(v, str) and (not v or ' ' in v) else v

@@ -22,6 +22,17 @@ from emtools.utils import Timer, Color
 from emtools.metadata import StarFile, SqliteFile, EPU
 from emtools.tests import testpath
 
+# Try to load starfile library to launch some comparisons
+try:
+    import starfile
+except:
+    starfile = None
+
+try:
+    import emtable
+except:
+    emtable = None
+
 
 class TestStarFile(unittest.TestCase):
     """
@@ -128,10 +139,12 @@ class TestStarFile(unittest.TestCase):
             otable = sf.getTable('optics')
             self.assertEqual(len(otable), 1)
 
+        ftmp = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.star')
+        print(f">>>> {ftmp.name}")
+
         def _enlarge(inputStar, n):
             """ Enlarge input star file. """
             lines = []
-            ftmp = tempfile.TemporaryFile('w+')
             with open(inputStar) as f:
                 for line in f:
                     ftmp.write(line)
@@ -141,26 +154,91 @@ class TestStarFile(unittest.TestCase):
                     for line in lines:
                         ftmp.write(line)
             ftmp.seek(0)
-            return ftmp
 
         n = 1000
         nn = 1000 * (n + 1)
-        part1m = _enlarge(partStar, n)
+        _enlarge(partStar, n)
 
-        with StarFile(part1m) as sf:
-            t = Timer()
+        ftmp.close()
+
+        print(Color.cyan(f"Testing starfile with {nn} particles"))
+
+        t = Timer()
+        tmpStar = ftmp.name
+
+        with StarFile(tmpStar) as sf:
+            t.tic()
             otable = sf.getTable('optics')
             t.toc('Read optics:')
+
+            t.tic()
+            size = sf.getTableSize('particles')
+            t.toc(f'Counted {size} particles:')
+            self.assertEqual(size, nn)
 
             t.tic()
             ptable = sf.getTable('particles')
             t.toc(f'Read {len(ptable)} particles:')
             self.assertEqual(len(ptable), nn)
 
+        if emtable:
             t.tic()
-            size = sf.getTableSize('particles')
-            t.toc(f'Counted {size} particles:')
-            self.assertEqual(size, nn)
+            table = emtable.Table(fileName=tmpStar, tableName='particles')
+            t.toc("Read with 'emtable'")
+
+        if starfile:
+            t.tic()
+            df = starfile.read(tmpStar)
+            t.toc("Read with 'starfile'")
+
+        os.unlink(ftmp.name)
+
+    def test_read_jobstar(self):
+        jobStar = testpath('metadata', 'relion5_job002_job.star')
+        if jobStar is None:
+            return
+
+        expected_values = {
+            'bfactor': '150',
+            'bin_factor': '1',
+            'do_dose_weighting': 'Yes',
+            'do_queue': 'No',
+            'dose_per_frame': '1.277',
+            'eer_grouping': '32',
+            'first_frame_sum': '1',
+            'fn_defect': '',
+            'fn_gain_ref': 'Movies/gain.mrc',
+            'gain_flip': 'No flipping (0)'
+        }
+
+        def _checkValues(t):
+            values = {row.rlnJobOptionVariable: row.rlnJobOptionValue for row in t}
+            for k, v in expected_values.items():
+                #print(f"{k} = {v}")
+                self.assertEqual(v, values[k])
+
+        expected_tables = ['job', 'joboptions_values']
+        with StarFile(jobStar) as sf:
+            print(f"Tables: {sf.getTableNames()}")
+            self.assertEqual(expected_tables, sf.getTableNames())
+            t1 = sf.getTable('joboptions_values', guessType=False)
+            _checkValues(t1)
+
+        # Test that we can write values
+        # with empty string and spaces
+        ftmp = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.star')
+        print(f">>>> Writting to {ftmp.name}")
+
+        with StarFile(ftmp) as sf:
+            sf.writeTable('joboptions', t1)
+
+        ftmp.close()
+
+        with StarFile(ftmp.name) as sf:
+            t2 = sf.getTable('joboptions', guessType=False)
+            _checkValues(t2)
+
+        os.unlink(ftmp.name)
 
 
 class TestEPU(unittest.TestCase):
@@ -206,7 +284,7 @@ class TestSqliteFile(unittest.TestCase):
         with SqliteFile(movieSqlite) as sf:
             self.assertEqual(sf.getTableNames(), self.BASIC_TABLES)
 
-            self.assertEqual(sf.getTableSize('Objects'), 19078)
+            self.assertEqual(sf.getTableSize('Objects'), 3775)
 
             props = [row for row in sf.iterTable('Properties')]
             self.assertEqual(len(props), 22)
@@ -227,7 +305,7 @@ class TestSqliteFile(unittest.TestCase):
 
         with SqliteFile(movieSqlite) as sf:
             t1 = [row for row in sf.iterTable('Objects')]
-            for i in [0, 1, 2, 19077]:
+            for i in [0, 1, 2, 3774]:
                 row = sf.getTableRow('Objects', i)
                 self.assertEqual(row, t1[i])
 
@@ -247,12 +325,8 @@ class TestSqliteFile(unittest.TestCase):
             self.assertEqual(sf.getTableNames(), self.BASIC_TABLES)
 
             t.tic()
-            self.assertEqual(sf.getTableSize('Objects'), 1417708)
+            self.assertEqual(sf.getTableSize('Objects'), 130987)
             t.toc("Size of particles")
 
             rows = [r for r in sf.iterTable('Classes')]
-            self.assertEqual(len(rows), 49)
-
-            # for row in sf.iterTable('Objects', limit=1, classes='Classes'):
-            #     for k, v in row.items():
-            #         print(f"{k:>10}: {v}")
+            self.assertEqual(len(rows), 45)

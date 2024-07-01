@@ -47,6 +47,7 @@ class Thumbnail:
         self.scale = 1.0
         self.output_format = kwargs.get('output_format', None)
         self.min_max = kwargs.get('min_max', None)
+        self.std_threshold = kwargs.get('std_threshold', 0)
 
 
     def __format(self, pil_img):
@@ -98,15 +99,27 @@ class Thumbnail:
         return encoded
 
     def from_array(self, imageArray):
-        # imean = imageArray.mean()
-        # isd = imageArray.std()
+
         if self.min_max:
             iMin, iMax = self.min_max
+            array = imageArray
         else:
-            iMax = imageArray.max()  # min(imean + 10 * isd, imageArray.max())
-            iMin = imageArray.min()  # max(imean - 10 * isd, imageArray.min())
+            if self.std_threshold > 0:
+                array = np.array(imageArray)
+                imean = array.mean()
+                isd = array.std()
+                isdTh = self.std_threshold * isd
+                minTh = imean - isdTh
+                maxTh = imean + isdTh
+                array[array < minTh] = minTh
+                array[array > maxTh] = maxTh
+            else:
+                array = imageArray
 
-        im255 = ((imageArray - iMin) / (iMax - iMin) * 255).astype(np.uint8)
+            iMax = array.max()
+            iMin = array.min()
+
+        im255 = ((array - iMin) / (iMax - iMin) * 255).astype(np.uint8)
 
         pil_img = Image.fromarray(im255)
 
@@ -127,4 +140,31 @@ class Thumbnail:
         mrc_img.close()
 
         return result
+
+    @staticmethod
+    def Micrograph(**kwargs):
+        """ Shortcut method with presets for Micrograph thumbail.
+        All settings can be overwriten with kwargs.
+        """
+        defaults = {
+            'output_format': 'base64',
+            'max_size': (512, 512),
+            'contrast_factor': 0.15,
+            'std_threshold': 1
+        }
+        defaults.update(kwargs)
+        return Thumbnail(**defaults)
+
+    @staticmethod
+    def Psd(**kwargs):
+        """ Shortcut method with presets for PSD thumbails.
+        All settings can be overwriten with kwargs.
+        """
+        defaults = {
+            'output_format': 'base64',
+            'max_size': (128, 128),
+            'contrast_factor': 1
+        }
+        defaults.update(kwargs)
+        return Thumbnail(**defaults)
 

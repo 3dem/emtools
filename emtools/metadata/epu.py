@@ -82,15 +82,14 @@ class EPU:
         missing_xml = []
         for root, dirs, files in os.walk(xmlDir):
             for fn in files:
-                f = os.path.join(root, fn)
                 # Check existing movies first
-
-                if xmlFn := EPU.get_movie_xml(f):
-                    if os.path.exists(xmlFn):
-                        x, y = EPU.parse_beam_shifts(xmlFn)
-                        yield os.path.basename(fn), x, y
+                if xmlFn := EPU.get_movie_xml(fn):
+                    xmlPath = os.path.join(root, xmlFn)
+                    if os.path.exists(xmlPath):
+                        x, y = EPU.parse_beam_shifts(xmlPath)
+                        yield fn, x, y
                     else:
-                        missing_xml.append(f)
+                        missing_xml.append(xmlPath)
 
         if missing_xml:
             print('Missing XML files for the following movies:')

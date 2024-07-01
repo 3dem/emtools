@@ -32,9 +32,10 @@ Modules and Classes
 .. toctree::
     :maxdepth: 2
 
+    utils <utils/index>
     metadata <metadata/index>
-    utils
-    image
+    jobs <jobs/index>
+
 
 
 

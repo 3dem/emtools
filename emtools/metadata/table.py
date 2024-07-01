@@ -28,7 +28,7 @@ from collections import OrderedDict, namedtuple
 class Column:
     def __init__(self, name, type=None):
         self._name = name
-        self._type = type or str
+        self._type = type or _str
 
     def __str__(self):
         return 'Column: %s (type: %s)' % (self._name, self._type)
@@ -128,7 +128,7 @@ class ColumnList:
             elif guessType and values:
                 colType = _guessType(values[i])
             else:
-                colType = str
+                colType = _str
             columns.append(Column(colName, colType))
 
         return columns
@@ -136,7 +136,7 @@ class ColumnList:
 
 class Table(ColumnList):
     """
-    Class to hold and manipulate tabular data for EM processing programs.
+    Class to hold and manipulate tabular data.
     """
     def __init__(self, columns=None):
         ColumnList.__init__(self, columns)
@@ -229,7 +229,7 @@ class Table(ColumnList):
         oldColumns = self._columns
         oldRows = self._rows
 
-        # Remove non desired columns and create again the Row class
+        # Remove undesired columns and create again the Row class
         self._columns = OrderedDict([(k, v) for k, v in oldColumns.items()
                                      if k not in rmCols])
         self.Row = self.createRowClass()
@@ -244,8 +244,12 @@ class Table(ColumnList):
     def getColumnValues(self, colName):
         """
         Return the values of a given column
-        :param colName: The name of an existing column to retrieve values.
-        :return: A list with all values of that column.
+
+        Args:
+            colName: The name of an existing column to retrieve values.
+
+        Return:
+            A list with all values of that column.
         """
         if colName not in self._columns:
             raise Exception("Not existing column: %s" % colName)
@@ -276,6 +280,10 @@ class Table(ColumnList):
 
 
 # --------- Helper functions  ------------------------
+def _str(s):
+    """ Get the string value but stripping quotes if present. """
+    return s[1:-1] if s.startswith('"') and s.endswith('"') else s
+
 
 def _guessType(strValue):
     try:
@@ -286,7 +294,7 @@ def _guessType(strValue):
             float(strValue)
             return float
         except ValueError:
-            return str
+            return _str
 
 
 def _formatValue(v):

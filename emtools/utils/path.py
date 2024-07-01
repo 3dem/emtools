@@ -1,18 +1,33 @@
+# **************************************************************************
+# *
+# * Authors:     J.M. de la Rosa Trevin (delarosatrevin@gmail.com)
+# *
+# * This program is free software; you can redistribute it and/or modify
+# * it under the terms of the GNU General Public License as published by
+# * the Free Software Foundation; either version 3 of the License, or
+# * (at your option) any later version.
+# *
+# * This program is distributed in the hope that it will be useful,
+# * but WITHOUT ANY WARRANTY; without even the implied warranty of
+# * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# * GNU General Public License for more details.
+# *
+# **************************************************************************
 
 import os
 import time
-from glob import glob
 from datetime import datetime as dt
-from datetime import timedelta
 from collections import OrderedDict
-import numpy as np
 
 from .pretty import Pretty
 from .process import Process
-from .color import Color
 
 
 class Path:
+    """
+    Group some path utility functions.
+    """
+
     class ExtDict(OrderedDict):
         """ Keep track of number of files and size by extension. """
         def register(self, filename, stat=None):
@@ -64,10 +79,12 @@ class Path:
 
     @staticmethod
     def addslash(path):
+        """ Add an slash (/) to the end of the path if not present. """
         return path if path.endswith('/') else path + '/'
 
     @staticmethod
     def rmslash(path):
+        """ Remove the slash (/) from the end of the path if present. """
         return path[:-1] if path.endswith('/') else path
 
     @staticmethod
@@ -149,7 +166,7 @@ class Path:
     @staticmethod
     def replaceExt(filename, newExt):
         """ Replace the current path extension(from last .)
-        with a new one. The new one should not contains the ."""
+        with a new one. The new one should not contain the ."""
         return Path.removeExt(filename) + '.' + newExt
 
     @staticmethod

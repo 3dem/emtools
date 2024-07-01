@@ -18,7 +18,7 @@ import unittest
 import numpy as np
 import time
 
-from emtools.utils import Pipeline
+from emtools.jobs import Pipeline
 
 
 class TestThreading(unittest.TestCase):
