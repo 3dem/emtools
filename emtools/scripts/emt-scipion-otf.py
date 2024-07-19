@@ -15,17 +15,14 @@
 # *
 # **************************************************************************
 
-import sys
 import json
 import os.path
 import argparse
-import ast
 import time
-from collections import OrderedDict
 import datetime as dt
-import re
 
-from emtools.utils import Process, Color, System, Pipeline
+from emtools.utils import Process, Color, System
+from emtools.jobs import Pipeline
 from emtools.metadata import EPU, SqliteFile, StarFile, Table
 
 import pyworkflow as pw
@@ -58,9 +55,9 @@ def loadGpus():
     ngpu = len(gpuProc)
     half = int(ngpu/2)
     gpus = list(range(ngpu))
-    # Take half of gpus for Motioncor and the other half for 2D
+    # Take half of gpus for Motioncor and the other half for cryolo
     params['mcGpus'] = gpus[:half]
-    params['cls2dGpus'] = gpus[half:]
+    params['cryoloGpus'] = gpus[half:]
 
 
 def calculateBoxSize(protCryolo):
@@ -101,7 +98,16 @@ def save_otf(otf):
         json.dump(otf, f, indent=4)
 
 
-def run2DPipeline(wf, protExtract):
+def run2DPipeline(wf, protExtract, particleSizeA, gpus):
+    """
+    Run the 2D pipeline for a given workflow, after particles extraction.
+
+    Args:
+        wf: workflow instance.
+        protExtract: particles extraction protocol.
+        particleSizeA: Size of the particles in Angstroms
+        gpus: list with GPUs that will be used for 2D classification
+    """
     print(f"\n>>> Running 2D pipeline: input extract "
           f"{Color.bold(protExtract.getRunName())}")
 
@@ -131,12 +137,12 @@ def run2DPipeline(wf, protExtract):
         protRelion2D = wf.createProtocol(
             'relion.protocols.ProtRelionClassify2D',
             objLabel=f'relion2d: {gridsquare}',
-            maskDiameterA=round(params['partSizeA'] * 1.5),
+            maskDiameterA=round(particleSizeA * 1.5),
             numberOfClasses=200,
             extraParams='--maxsig 50',
             pooledParticles=50,
             doGpu=True,
-            gpusToUse=','.join(str(g) for g in params['cls2dGpus']),
+            gpusToUse=','.join(str(g) for g in gpus),
             numberOfThreads=32,
             numberOfMpi=1,
             allParticlesRam=True,
@@ -347,7 +353,9 @@ def create_project(workingDir):
     wf.launchProtocol(protCTF, wait={OUT_CTFS: 16})
 
     protCryoloImport = None
-    cryoloInputModelFrom = 0  # General model (low pass filtered)
+    #cryoloInputModelFrom = 0  # General model (low pass filtered)
+    cryoloInputModelFrom = 1  # Denoised with Janni
+
     if 'cryolo_model' in picking:
         protCryoloImport = wf.createProtocol(
             'sphire.protocols.SphireProtCryoloImport',
@@ -358,13 +366,13 @@ def create_project(workingDir):
         cryoloInputModelFrom = 2  # Other
 
     protCryolo = wf.createProtocol(
-        'sphire.protocols.SphireProtCRYOLOPicking',
+        'sphire.protocols.SphireProtCRYOLOPickingTasks',
         objLabel='cryolo picking',
         boxSize=0,  # let cryolo estimate the box size
         conservPickVar=0.05,  # less conservative than default 0.3
-        useGpu=False,  # use cpu for picking, fast enough
+        useGpu=True,  # use gpu for speed up janni denoising
         numCpus=8,
-        gpuList='',
+        gpuList=' '.join(str(g) for g in params['cryoloGpus']),
         streamingBatchSize=16,
         streamingSleepOnWait=60,
         numberOfThreads=1,
@@ -376,11 +384,6 @@ def create_project(workingDir):
         _setPointer(protCryolo.inputModel, protCryoloImport, 'outputModel')
 
     wf.launchProtocol(protCryolo, wait={OUT_COORD: 100})
-
-    skip_2d = not opts.get('2d', True)
-
-    if skip_2d:
-        return
 
     calculateBoxSize(protCryolo)
 
@@ -403,16 +406,13 @@ def create_project(workingDir):
     _setPointer(protRelionExtract.inputCoordinates, protCryolo, OUT_COORD)
     # Ensure there are at least some particles
     wf.launchProtocol(protRelionExtract, wait={OUT_PART: 100})
-    run2DPipeline(wf, protRelionExtract)
 
 
-def continue_project(workingDir):
+def continue_2d(workingDir, gpus):
     print(f"Loading project from {workingDir}")
     project = Project(pw.Config.getDomain(), workingDir)
     project.load()
     wf = Workflow(project)
-    loadGpus()
-
     protExtract = protCryolo = None
 
     for run in project.getRuns():
@@ -429,7 +429,7 @@ def continue_project(workingDir):
 
     calculateBoxSize(protCryolo)
 
-    run2DPipeline(wf, protExtract)
+    run2DPipeline(wf, protExtract, params['partSizeA'], gpus)
 
 
 def restart(workingDir, args):
@@ -718,7 +718,8 @@ def main():
                    help="Some test code")
     g.add_argument('--clean', action="store_true",
                    help="Clean Scipion project files/folders.")
-    g.add_argument('--continue_2d', action="store_true")
+    g.add_argument('--continue_2d', nargs='+', type=int,
+                   metavar='GPUs')
 
     g.add_argument('--write_stars', default=argparse.SUPPRESS, nargs='*',
                    help="Generate STAR micrographs and particles STAR files."
@@ -751,8 +752,8 @@ def main():
         clean_project(cwd)
     elif 'write_stars' in args:
         write_stars(cwd, ids=args.write_stars)
-    elif args.continue_2d:
-        continue_project(cwd)
+    elif gpus := args.continue_2d:
+        continue_2d(cwd, gpus)
     elif args.clone_project:
         src, dst = args.clone_project
         clone_project(src, dst)
