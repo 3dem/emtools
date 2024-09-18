@@ -18,10 +18,12 @@
 import json
 import os.path
 import argparse
+import threading
 import time
 import datetime as dt
+from pprint import pprint
 
-from emtools.utils import Process, Color, System
+from emtools.utils import Process, Color, System, Pretty
 from emtools.jobs import Pipeline
 from emtools.metadata import EPU, SqliteFile, StarFile, Table
 
@@ -40,7 +42,6 @@ OUT_PART = 'outputParticles'
 
 # Some global workflow parameters
 params = {}
-OTF_FILE = 'scipion-otf.json'
 cwd = os.getcwd()
 
 
@@ -74,8 +75,9 @@ def calculateBoxSize(protCryolo):
 
     # Calculate the boxsize based on double of cryolo particle estimation
     # and recommended EMAN's boxsizes for performance
+    ps = protCryolo.inputMicrographs.get().getSamplingRate()
     params['partSizePx'] = protCryolo.boxsize.get()
-    params['partSizeA'] = params['partSizePx'] * protCryolo.inputMicrographs.get().getSamplingRate()
+    params['partSizeA'] = params['partSizePx'] * ps
     boxSize = max(params['partSizePx'] * 2.5, 100)
     for bs in EMAN_BOXSIZES:
         if bs > boxSize:
@@ -84,83 +86,120 @@ def calculateBoxSize(protCryolo):
     params['boxSize'] = boxSize
 
 
-def load_otf():
-    otf = {'2d': {}}
-    if os.path.exists(OTF_FILE):
-        with open(OTF_FILE) as f:
-            otf = json.load(f)
+class Rln2DPipeline(Pipeline):
+    def __init__(self, wf, protExtract, particleSizeA, gpus, dry=False):
+        """
+        2D pipeline for a given workflow, after particles extraction.
 
-    return otf
+        Args:
+            wf: workflow instance.
+            protExtract: particles extraction protocol.
+            particleSizeA: Size of the particles in Angstroms
+            gpus: list with GPUs that will be used for 2D classification
+        """
+        Pipeline.__init__(self)
+        print(f"\n>>> Running 2D pipeline: input extract "
+              f"{Color.bold(protExtract.getRunName())}")
+
+        self.lock = threading.Lock()
+        self._jsonFile = 'scipion-otf-2d.json'
+        self._json = self._load_json()
+        pprint(self._json)
+
+        g = self.addGenerator(self._generate2D)
+        self.addProcessor(g.outputQueue, self._run2D)
 
 
-def save_otf(otf):
-    with open(OTF_FILE, 'w') as f:
-        json.dump(otf, f, indent=4)
+    def _load_json(self):
+        self._json = {'groups': {}, 'gridsquares': {}}
 
+        if os.path.exists(self._jsonFile):
+            with open(self._jsonFile) as f:
+                self._json = json.load(f)
 
-def run2DPipeline(wf, protExtract, particleSizeA, gpus):
-    """
-    Run the 2D pipeline for a given workflow, after particles extraction.
+    def _save_json(self):
+        with open(self._jsonFile, 'w') as f:
+            json.dump(self._json, f, indent=4)
 
-    Args:
-        wf: workflow instance.
-        protExtract: particles extraction protocol.
-        particleSizeA: Size of the particles in Angstroms
-        gpus: list with GPUs that will be used for 2D classification
-    """
-    print(f"\n>>> Running 2D pipeline: input extract "
-          f"{Color.bold(protExtract.getRunName())}")
+    @property
+    def batches(self):
+        return self._json['batches']
 
-    otf = load_otf()
-
-    def _createBatch2D(gridsquare, subsetParts):
-        rangeStr = f"{subsetParts[0].getObjId()} - {subsetParts[-1].getObjId()}"
-        print(f"Creating subset with range: {rangeStr}")
-        protSubset = wf.createProtocol(
-            'pwem.protocols.ProtUserSubSet',
-            objLabel=f'subset: {gridsquare} : {rangeStr}',
-        )
-        _setPointer(protSubset.inputObject, protExtract, OUT_PART)
-        wf.saveProtocol(protSubset)
-        protSubset.makePathsAndClean()
-        # Create subset particles as output for the protocol
-        inputParticles = protExtract.outputParticles
-        outputParticles = protSubset._createSetOfParticles()
-        outputParticles.copyInfo(inputParticles)
-        for particle in subsetParts:
-            outputParticles.append(particle)
-        protSubset._defineOutputs(outputParticles=outputParticles)
-        protSubset._defineTransformRelation(inputParticles, outputParticles)
-        protSubset.setStatus(STATUS_FINISHED)
-        wf.project._storeProtocol(protSubset)
-
-        protRelion2D = wf.createProtocol(
-            'relion.protocols.ProtRelionClassify2D',
-            objLabel=f'relion2d: {gridsquare}',
-            maskDiameterA=round(particleSizeA * 1.5),
-            numberOfClasses=200,
-            extraParams='--maxsig 50',
-            pooledParticles=50,
-            doGpu=True,
-            gpusToUse=','.join(str(g) for g in gpus),
-            numberOfThreads=32,
-            numberOfMpi=1,
-            allParticlesRam=True,
-            useGradientAlg=True,
-        )
-
-        _setPointer(protRelion2D.inputParticles, protSubset, OUT_PART)
-        wf.saveProtocol(protRelion2D)
-        otf['2d'][gridsquare] = {
-            'runId': protRelion2D.getObjId(),
-            'runName': protRelion2D.getRunName(),
-            'runDir': protRelion2D.getWorkingDir()
+    def _updateBatch(self, batch):
+        self.lock.acquire()
+        self.batches[batch['id']] = batch
+        _save_json(self._json)
+        self.lock.release()
+    def _createBatch2D(self, gridsquare, subsetParts):
+        firstId, lastId = subsetParts[0].getObjId(), subsetParts[-1].getObjId()
+        suffix = f"{gridsquare}: {firstId} - {lastId}"
+        batch = {
+            'id': str(len(self.batches) + 1),
+            'gridsquares': [gridsquare],
+            'suffix': suffix,
+            'firstId': firstId,
+            'lastId': lastId
         }
-        save_otf(otf)
 
-        return {'gs': gridsquare, 'prot': protRelion2D}
+        print(f"Creating subset for {suffix}")
+        if dry:
+            print("...running in DRY MODE.")
+        else:
+            protSubset = wf.createProtocol(
+                'pwem.protocols.ProtUserSubSet',
+                objLabel=f'subset: {suffix}',
+            )
+            _setPointer(protSubset.inputObject, protExtract, OUT_PART)
+            wf.saveProtocol(protSubset)
+            protSubset.makePathsAndClean()
+            # Create subset particles as output for the protocol
+            inputParticles = protExtract.outputParticles
+            outputParticles = protSubset._createSetOfParticles()
+            outputParticles.copyInfo(inputParticles)
+            for particle in subsetParts:
+                outputParticles.append(particle)
+            protSubset._defineOutputs(outputParticles=outputParticles)
+            protSubset._defineTransformRelation(inputParticles, outputParticles)
+            protSubset.setStatus(STATUS_FINISHED)
+            wf.project._storeProtocol(protSubset)
 
-    def _generate2D():
+            protRelion2D = wf.createProtocol(
+                'relion.protocols.ProtRelionClassify2D',
+                objLabel=f'relion2d: {suffix}',
+                maskDiameterA=round(particleSizeA * 1.5),
+                numberOfClasses=200,
+                extraParams='--maxsig 50',
+                pooledParticles=50,
+                doGpu=True,
+                gpusToUse=','.join(str(g) for g in gpus),
+                numberOfThreads=32,
+                numberOfMpi=1,
+                allParticlesRam=True,
+                useGradientAlg=True,
+            )
+
+            _setPointer(protRelion2D.inputParticles, protSubset, OUT_PART)
+            wf.saveProtocol(protRelion2D)
+
+            lock.acquire()
+
+            def _run(prot):
+                return {
+                    'runId': prot.getObjId(),
+                    'runName': prot.getRunName(),
+                    'runDir': prot.getWorkingDir()
+                }
+
+            batch.update(
+                {'runs': [_run(p) for p in [protSubset, protRelion2D]]})
+            otf_2d['gridsquares'][gridsquare] = batch['id']
+            self._updateBatch(batch)
+
+            batch['prot'] = protRelion2D
+
+        return batch
+
+    def _generate2D(self):
         """ Generated subset of 2D from the outputParticles from extract protocol.
         Subsets will be created based on the GridSquare of the micrographs. """
         lastParticleIndex = 0
@@ -168,14 +207,11 @@ def run2DPipeline(wf, protExtract, particleSizeA, gpus):
         # Classify in batches
         lastMt = 0
         extractSqliteFn = protExtract.outputParticles.getFileName()
-        tmpSqliteFn = '/tmp/particles.sqlite'
+        tmpSqlite = os.path.abspath(extractSqliteFn).replace('/', '__')
+        tmpSqliteFn = os.path.join('/tmp', tmpSqlite)
 
         while True:
-            if lastGs:  # Not the first time, let's wait
-                print("Sleeping...")
-                time.sleep(30)  # wait for 5 minutes before checking for new jobs
-
-            print("Wake up!!!")
+            print("Checking new particles!!!")
             mt = os.path.getmtime(extractSqliteFn)
             if mt > lastMt:
                 # Let's iterate over the particles to check if there is a
@@ -186,6 +222,8 @@ def run2DPipeline(wf, protExtract, particleSizeA, gpus):
                 Process.system(f'rm -rf {tmpSqliteFn}')
                 SqliteFile.copyDb(extractSqliteFn, tmpSqliteFn, tries=10, wait=30)
                 print("Copy done!")
+            else:
+                print("Particles db has not changed since: ", Pretty.timestamp(lastMt))
 
             parts = SetOfParticles(filename=tmpSqliteFn)
             subsetParts = []
@@ -236,25 +274,25 @@ def run2DPipeline(wf, protExtract, particleSizeA, gpus):
                     break
 
             lastMt = mt
+            print("Sleeping...")
+            time.sleep(30)  # wait for 5 minutes before checking for new jobs
 
-    def _run2D(batch):
-        protRelion2D = batch['prot']
-        wf.launchProtocol(protRelion2D, wait=True)
+    def _run2D(self, batch):
+        # In Dry Mode the is not prot in the batch dict
+        if protRelion2D := batch.get('prot', None):
+            #wf.launchProtocol(protRelion2D, wait=True)
+            wf.saveProtocol(protRelion2D)
 
-        protRelion2DSelect = wf.createProtocol(
-            'relion.protocols.ProtRelionSelectClasses2D',
-            objLabel=f"select 2d - {batch['gs']}",
-            minThreshold=0.05,
-            minResolution=30.0,
-        )
+            protRelion2DSelect = wf.createProtocol(
+                'relion.protocols.ProtRelionSelectClasses2D',
+                objLabel=f"select 2d - {batch['gs']}",
+                minThreshold=0.05,
+                minResolution=30.0,
+            )
 
-        protRelion2DSelect.inputProtocol.set(protRelion2D)
-        wf.launchProtocol(protRelion2DSelect, wait=True)
-
-    ppl = Pipeline()
-    g = ppl.addGenerator(_generate2D)
-    ppl.addProcessor(g.outputQueue, _run2D)
-    ppl.run()
+            protRelion2DSelect.inputProtocol.set(protRelion2D)
+            #wf.launchProtocol(protRelion2DSelect, wait=True)
+            wf.saveProtocol(protRelion2DSelect)
 
 
 def clean_project(workingDir):
@@ -408,28 +446,31 @@ def create_project(workingDir):
     wf.launchProtocol(protRelionExtract, wait={OUT_PART: 100})
 
 
-def continue_2d(workingDir, gpus):
+def continue_2d(workingDir, gpus, dry):
     print(f"Loading project from {workingDir}")
     project = Project(pw.Config.getDomain(), workingDir)
     project.load()
     wf = Workflow(project)
-    protExtract = protCryolo = None
+    protocols = {}
 
-    for run in project.getRuns():
-        clsName = run.getClassName()
-        print(f"Run {run.getObjId()}: {clsName}")
-        if clsName == 'ProtRelionExtractParticles':
-            protExtract = run
-        elif clsName.startswith('SphireProtCRYOLOPicking'):
-            protCryolo = run
+    def _loadProtocols():
+        for run in project.getRuns():
+            if clsName.startswith('SphireProtCRYOLOPicking'):
+                protocols['picking'] = run
+            elif run.getClassName() == 'ProtRelionExtractParticles':
+                protocols['extract'] = run
+        return protocols
 
-    if not protExtract.isActive():
-        print("Re-running extract protocol...")
-        wf.launchProtocol(protExtract, wait={OUT_PART: 100})
+    _loadProtocols()
+    protExtract = protocols.get('extract', None)
+    while protExtract is None:
+        time.sleep(60)  # wait for 5 mins
+        _loadProtocols()
+        protExtract = protocols.get('extract', None)
 
-    calculateBoxSize(protCryolo)
-
-    run2DPipeline(wf, protExtract, params['partSizeA'], gpus)
+    wf.wait(protExtract, wait={OUT_PART: 100})
+    calculateBoxSize(protocols['picking'])
+    Rln2DPipeline(wf, protExtract, params['partSizeA'], gpus, dry=dry).run()
 
 
 def restart(workingDir, args):
@@ -588,6 +629,39 @@ def write_coordinates(micStarFn, prot):
 def print_prot(prot, label='Protocol'):
     print(f">>> {label} {prot.getObjId():>6}   {prot.getClassName():<30} {prot.getRunName()}")
 
+def match_epu_xmls(workingDir, micStarFn='micrographs_ctf.star'):
+    total = 0
+    missing = 0
+    xmlFolder = os.path.join('EPU', 'MicsXML')
+    Process.system(f'rm -rf {xmlFolder} && mkdir {xmlFolder}')
+    with StarFile(micStarFn) as sf:
+        for row in sf.iterTable('micrographs'):
+            _, name = row.rlnMicrographMovieName.split('Images-Disc1_')
+            xmlName = os.path.join('Images-Disc1', name.replace('_EER.eer', '.xml'))
+            xmlFile = os.path.join('EPU', xmlName)
+            total += 1
+            micBase = os.path.basename(row.rlnMicrographName)
+            if os.path.exists(xmlFile):
+                linkName = os.path.join(xmlFolder, micBase.replace('.mrc', '.xml'))
+                cmd = f"ln -s {xmlFile.replace('EPU/', '../')} {linkName}"
+                Process.system(cmd)
+            else:
+                print(micBase, '->', Color.red(xmlFile))
+                missing += 1
+
+    print(f"Missing {Color.red(missing)} XMLs out of {Color.bold(total)} micrographs")
+
+        # mics = Table(['rlnMicrographName',
+        #               'rlnOpticsGroup',
+        #               'rlnCtfImage',
+        #               'rlnDefocusU',
+        #               'rlnDefocusV',
+        #               'rlnCtfAstigmatism',
+        #               'rlnDefocusAngle',
+        #               'rlnCtfFigureOfMerit',
+        #               'rlnCtfMaxResolution',
+        #               'rlnMicrographMovieName'])
+        # ps = firstMic.getSamplingRate()
 
 def write_stars(workingDir, ids=None):
     """ Write star files for Relion. Generates micrographs_ctf.star,
@@ -727,12 +801,16 @@ def main():
                         "and the Cryolo picking for picking. One can pass a string"
                         "with the protocol ids for ctfs and/or picking. For example:"
                         "--write_starts 'ctfs=1524 picking=1711'")
+    g.add_argument('--match_epu_xmls', action='store_true')
+
     g.add_argument('--clone_project', nargs=2, metavar=('SRC', 'DST'),
                    help="Clone an existing Scipion project")
     g.add_argument('--fix_run_links', metavar='RUNS_SRC',
                    help="Fix links of Runs of this project from another one.")
     g.add_argument('--print_protocol', '-p',
                    help="Print the values of a given protocol.")
+    p.add_argument('--dry', action='store_true',
+                   help="Do not excute operations, just show the steps.")
 
     args = p.parse_args()
 
@@ -753,7 +831,7 @@ def main():
     elif 'write_stars' in args:
         write_stars(cwd, ids=args.write_stars)
     elif gpus := args.continue_2d:
-        continue_2d(cwd, gpus)
+        continue_2d(cwd, gpus, args.dry)
     elif args.clone_project:
         src, dst = args.clone_project
         clone_project(src, dst)
@@ -761,6 +839,8 @@ def main():
         fix_run_links(cwd, args.fix_run_links)
     elif protId := args.print_protocol:
         print_protocol(cwd, protId)
+    elif args.match_epu_xmls:
+        match_epu_xmls(cwd)
     else:  # by default open the GUI
         from pyworkflow.gui.project import ProjectWindow
         ProjectWindow(cwd).show()

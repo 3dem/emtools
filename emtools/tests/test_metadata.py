@@ -16,10 +16,14 @@
 import os
 import unittest
 import tempfile
+import random
+import time
+import threading
 from pprint import pprint
+from datetime import datetime
 
-from emtools.utils import Timer, Color
-from emtools.metadata import StarFile, SqliteFile, EPU
+from emtools.utils import Timer, Color, Pretty
+from emtools.metadata import StarFile, SqliteFile, EPU, StarMonitor
 from emtools.tests import testpath
 
 # Try to load starfile library to launch some comparisons
@@ -240,6 +244,82 @@ class TestStarFile(unittest.TestCase):
 
         os.unlink(ftmp.name)
 
+    def test_star_monitor(self):
+        partStar = testpath('metadata', 'particles_1k.star')
+        if partStar is None:
+            return
+
+        N = 1000
+
+        with StarFile(partStar) as sf:
+            ptable = sf.getTable('particles')
+            self.assertEqual(len(ptable), N)
+            otable = sf.getTable('optics')
+            self.assertEqual(len(otable), 1)
+
+        ftmp = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.star')
+        print(f">>>> Using temporary file: {ftmp.name}")
+
+        def _write_star_parts():
+            with StarFile(ftmp) as sfOut:
+                sfOut.writeTable('optics', otable)
+                sfOut.writeHeader('particles', ptable)
+                u = int(random.uniform(5, 10))
+                s = u * 10
+                w = 0
+                for i, row in enumerate(ptable):
+                    if i == s:
+                        print(f"{w} rows written.")
+                        ftmp.flush()
+                        time.sleep(3)
+                        u = int(random.uniform(5, 10))
+                        s = i + u * 10
+                        w = 0
+                    sfOut.writeRow(row)
+                    w += 1
+
+                print(f"{w} rows written.")
+
+        th = threading.Thread(target=_write_star_parts)
+        print(">>> Starting thread...")
+        th.start()
+
+        monitor = StarMonitor(ftmp.name, 'particles',
+                              lambda row: row.rlnImageId,
+                              inputTimeout=30)
+
+        totalRows = 0
+        while not monitor.timedOut():
+            newRows = monitor.update()
+            n = len(newRows)
+            totalRows += n
+            print(f"New rows: {n}")
+            print(f"Last update: {Pretty.datetime(monitor.lastUpdate)} "
+                  f"Last check: {Pretty.datetime(monitor.lastCheck)} "
+                  f"No activity: {Pretty.delta(monitor.lastCheck - monitor.lastUpdate)}")
+            time.sleep(5)
+
+        self.assertEqual(totalRows, N)
+        #
+        # for i in range(10):
+        #     time.sleep(5)
+        #     mTime = datetime.fromtimestamp(os.path.getmtime(ftmp.name))
+        #     print("Last modified: ", Pretty.datetime(mTime))
+
+        print("<<< Waiting for thread")
+        th.join()
+
+        ftmp.close()
+
+        # Check output is what we expect
+        with StarFile(ftmp.name) as sf:
+            ptable = sf.getTable('particles')
+            self.assertEqual(len(ptable), N)
+            otable = sf.getTable('optics')
+            self.assertEqual(len(otable), 1)
+
+        os.unlink(ftmp.name)
+
 
 class TestEPU(unittest.TestCase):
     """ Tests for EPU class. """
@@ -264,6 +344,7 @@ class TestEPU(unittest.TestCase):
             print(f">>> Getting session info from: {Color.bold(sessionPath)}")
             session = EPU.get_session_info(sessionPath)
             pprint(session)
+
 
 
 class TestSqliteFile(unittest.TestCase):

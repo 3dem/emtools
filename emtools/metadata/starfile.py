@@ -21,9 +21,13 @@
 
 __author__ = 'Jose Miguel de la Rosa Trevin, Grigory Sharov'
 
+import os
 import sys
+import time
 import re
 from contextlib import AbstractContextManager
+from collections import OrderedDict
+from datetime import datetime, timedelta
 
 from .table import ColumnList, Table
 
@@ -389,6 +393,68 @@ class StarFile(AbstractContextManager):
         else:
             # Only write the table name
             self._writeTableName(tableName)
+
+
+class StarMonitor(OrderedDict):
+    """
+    Monitor a STAR file for changes and return new items in a given table.
+
+    This class will subclass OrderedDict to hold a clone of each new element.
+    It will also keep internally the last access timestamp to prevent loading
+    the STAR file if it has not been modified since the last check.
+    """
+    def __init__(self, fileName, tableName, rowKeyFunc, **kwargs):
+        self._seenItems = set()
+        self._fileName = fileName
+        self._tableName = tableName
+        self._rowKeyFunc = rowKeyFunc
+        self._sleepOnWait = kwargs.get('sleepOnWait', 10)
+        self._inputTimeout = timedelta(seconds=kwargs.get('inputTimeout', 300))
+        self.lastCheck = None  # Last timestamp when input was checked
+        self.lastUpdate = None  # Last timestamp when new items were found
+        self.inputCount = 0  # Count all input elements
+
+        # Black list some items to not be monitored again
+        # We are not interested in the items but just skip them from
+        # the processing
+        blacklist = kwargs.get('blacklist', None)
+        if blacklist:
+            for row in blacklist:
+                self._seenItems.add(self._rowKeyFunc(row))
+
+    def update(self):
+        newRows = []
+        now = datetime.now()
+        mTime = datetime.fromtimestamp(os.path.getmtime(self._fileName))
+
+        if self.lastCheck is None or mTime > self.lastCheck:
+            with StarFile(self._fileName) as sf:
+                for row in sf.iterTable(self._tableName):
+                    rowKey = self._rowKeyFunc(row)
+                    if rowKey not in self._seenItems:
+                        self.inputCount += 1
+                        self._seenItems.add(rowKey)
+                        newRows.append(row)
+
+        self.lastCheck = now
+        if newRows:
+            self.lastUpdate = now
+        return newRows
+
+    def timedOut(self):
+        """ Return True when there has been inputTimeout seconds
+        since last new items were found. """
+        if self.lastCheck is None or self.lastUpdate is None:
+            return False
+        else:
+            return self.lastCheck - self.lastUpdate > self._inputTimeout
+
+    def newItems(self, sleep=10):
+        """ Yield new items since last update until the stream is closed. """
+        while not self.timedOut():
+            for row in self.update():
+                yield row
+            time.sleep(self._sleepOnWait)
 
 
 # --------- Helper functions  ------------------------
