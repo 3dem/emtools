@@ -20,7 +20,7 @@ from .monitors import ProtocolMonitor, SetMonitor
 from .workflow import Workflow
 
 # This is imported here for backward compatibility
-from emtools.metadata import BatchManager
+from emtools.jobs import BatchManager
 
 
 __all__ = ["ProtocolMonitor", "SetMonitor", "Workflow", "BatchManager"]

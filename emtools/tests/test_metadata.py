@@ -19,12 +19,16 @@ import tempfile
 import random
 import time
 import threading
+import tempfile
 from pprint import pprint
 from datetime import datetime
 
 from emtools.utils import Timer, Color, Pretty
 from emtools.metadata import StarFile, SqliteFile, EPU, StarMonitor
+from emtools.jobs import BatchManager
 from emtools.tests import testpath
+
+from .star_pipeline_tester import StarPipelineTester
 
 # Try to load starfile library to launch some comparisons
 try:
@@ -244,7 +248,7 @@ class TestStarFile(unittest.TestCase):
 
         os.unlink(ftmp.name)
 
-    def test_star_monitor(self):
+    def __test_star_streaming(self, monitorFunc):
         partStar = testpath('metadata', 'particles_1k.star')
         if partStar is None:
             return
@@ -286,25 +290,10 @@ class TestStarFile(unittest.TestCase):
 
         monitor = StarMonitor(ftmp.name, 'particles',
                               lambda row: row.rlnImageId,
-                              inputTimeout=30)
+                              timeout=30)
 
-        totalRows = 0
-        while not monitor.timedOut():
-            newRows = monitor.update()
-            n = len(newRows)
-            totalRows += n
-            print(f"New rows: {n}")
-            print(f"Last update: {Pretty.datetime(monitor.lastUpdate)} "
-                  f"Last check: {Pretty.datetime(monitor.lastCheck)} "
-                  f"No activity: {Pretty.delta(monitor.lastCheck - monitor.lastUpdate)}")
-            time.sleep(5)
-
-        self.assertEqual(totalRows, N)
-        #
-        # for i in range(10):
-        #     time.sleep(5)
-        #     mTime = datetime.fromtimestamp(os.path.getmtime(ftmp.name))
-        #     print("Last modified: ", Pretty.datetime(mTime))
+        totalCount = monitorFunc(monitor)
+        self.assertEqual(totalCount, N)
 
         print("<<< Waiting for thread")
         th.join()
@@ -319,6 +308,65 @@ class TestStarFile(unittest.TestCase):
             self.assertEqual(len(otable), 1)
 
         os.unlink(ftmp.name)
+
+    def test_star_monitor(self):
+        """ Basic test checking that we are able to monitor a streaming
+        generated star file. The final count of rows should be the
+        same as the input one.
+        """
+        def _monitor(monitor):
+            totalRows = 0
+            while not monitor.timedOut():
+                newRows = monitor.update()
+                n = len(newRows)
+                totalRows += n
+                print(f"New rows: {n}")
+                print(f"Last update: {Pretty.datetime(monitor.lastUpdate)} "
+                      f"Last check: {Pretty.datetime(monitor.lastCheck)} "
+                      f"No activity: {Pretty.delta(monitor.lastCheck - monitor.lastUpdate)}")
+                time.sleep(5)
+            return totalRows
+
+        self.__test_star_streaming(_monitor)
+
+    def test_star_batchmanager(self):
+        """ Testing the creating of batches from an input star monitor
+        using different batch sizes.
+        """
+
+        def _filename(row):
+            """ Helper to get unique name from a particle row. """
+            pts, stack = row.rlnImageName.split('@')
+            return stack.replace('.mrcs', f'_p{pts}.mrcs')
+
+        def _batchmanager(monitor, batchSize):
+            totalFiles = 0
+
+            with tempfile.TemporaryDirectory() as tmp:
+                print(f"Using dir: {tmp}")
+
+                batchMgr = BatchManager(batchSize, monitor.newItems(), tmp,
+                                        itemFileNameFunc=_filename)
+
+                for batch in batchMgr.generate():
+                    files = len(os.listdir(batch['path']))
+                    print(f"Batch {batch['id']} -> {batch['path']}, files: {files}")
+                    totalFiles += files
+
+            return totalFiles
+
+        self.__test_star_streaming(lambda m: _batchmanager(m, 128))
+        self.__test_star_streaming(lambda m: _batchmanager(m, 200))
+
+    def test_star_pipeline(self):
+        def _pipeline(monitor):
+            with tempfile.TemporaryDirectory() as tmp:
+                print(f"Using dir: {tmp}")
+                p = StarPipelineTester(monitor.fileName, tmp)
+                p.run()
+                return p.totalItems
+
+        self.__test_star_streaming(_pipeline)
 
 
 class TestEPU(unittest.TestCase):
