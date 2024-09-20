@@ -248,7 +248,7 @@ class TestStarFile(unittest.TestCase):
 
         os.unlink(ftmp.name)
 
-    def __test_star_streaming(self, monitorFunc):
+    def __test_star_streaming(self, monitorFunc, inputStreaming=True):
         partStar = testpath('metadata', 'particles_1k.star')
         if partStar is None:
             return
@@ -267,20 +267,24 @@ class TestStarFile(unittest.TestCase):
         def _write_star_parts():
             with StarFile(ftmp) as sfOut:
                 sfOut.writeTable('optics', otable)
-                sfOut.writeHeader('particles', ptable)
-                u = int(random.uniform(5, 10))
-                s = u * 10
-                w = 0
-                for i, row in enumerate(ptable):
-                    if i == s:
-                        print(f"{w} rows written.")
-                        ftmp.flush()
-                        time.sleep(3)
-                        u = int(random.uniform(5, 10))
-                        s = i + u * 10
-                        w = 0
-                    sfOut.writeRow(row)
-                    w += 1
+                if inputStreaming:
+                    sfOut.writeHeader('particles', ptable)
+                    u = int(random.uniform(5, 10))
+                    s = u * 10
+                    w = 0
+                    for i, row in enumerate(ptable):
+                        if i == s:
+                            print(f"{w} rows written.")
+                            ftmp.flush()
+                            time.sleep(3)
+                            u = int(random.uniform(5, 10))
+                            s = i + u * 10
+                            w = 0
+                        sfOut.writeRow(row)
+                        w += 1
+                else:
+                    sfOut.writeTable('particles', ptable)
+                    w = len(ptable)
 
                 print(f"{w} rows written.")
 
@@ -366,7 +370,8 @@ class TestStarFile(unittest.TestCase):
                 p.run()
                 return p.totalItems
 
-        self.__test_star_streaming(_pipeline)
+        self.__test_star_streaming(_pipeline, inputStreaming=True)
+        self.__test_star_streaming(_pipeline, inputStreaming=False)
 
 
 class TestEPU(unittest.TestCase):
