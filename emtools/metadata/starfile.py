@@ -47,10 +47,10 @@ class StarFile(AbstractContextManager):
 
     @staticmethod
     def printTable(table, tableName=''):
-        w = StarFile(sys.stdout)
+        w = StarFile(sys.stdout, closeFile=False)
         w.writeTable(tableName, table, singleRow=len(table) <= 1)
 
-    def __init__(self, inputFile, mode='r'):
+    def __init__(self, inputFile, mode='r', **kwargs):
         """
         Args:
             inputFile: can be a str with the file path or a file object.
@@ -58,6 +58,7 @@ class StarFile(AbstractContextManager):
                 the mode will be ignored.
         """
         self._file = self.__loadFile(inputFile, mode)
+        self._closeFile = kwargs.get('closeFile', True)
 
         # While parsing the file, store the offsets for data_ blocks
         # for quick access when need to load data rows
@@ -305,7 +306,8 @@ class StarFile(AbstractContextManager):
 
     def close(self):
         if getattr(self, '_file', None):
-            self._file.close()
+            if self._closeFile:
+                self._file.close()
             self._file = None
 
     # ---------------------- Writer functions --------------------------------
@@ -336,7 +338,7 @@ class StarFile(AbstractContextManager):
         for col in self._columns:
             self._file.write("_%s \n" % col.getName())
 
-    def _writeRowValues(self, values):
+    def writeRowValues(self, values):
         """ Write to file a line for these row values.
         Order should be ensured that is the same of the expected columns.
         """
@@ -350,7 +352,7 @@ class StarFile(AbstractContextManager):
         """ Write to file the line for this row.
         Row should be an instance of the expected Row class.
         """
-        self._writeRowValues(row._asdict().values())
+        self.writeRowValues(row._asdict().values())
 
     def _writeNewline(self):
         self._file.write('\n')

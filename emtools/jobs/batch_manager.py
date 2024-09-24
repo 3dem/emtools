@@ -16,7 +16,9 @@
 
 import os
 from uuid import uuid4
-from emtools.utils import Path, Pretty, Process
+from datetime import datetime
+
+from emtools.utils import Process
 
 
 class BatchManager:
@@ -43,38 +45,43 @@ class BatchManager:
         self._workingPath = workingPath
         self._itemFileNameFunc = itemFileNameFunc
 
+    def _createBatchId(self):
+        # We will use batchCount, before the batch is created
+        nowPrefix = datetime.now().strftime('%y%m%d-%H%M%S')
+        countStr = '%02d' % (self._batchCount + 1)
+        uuidSuffix = str(uuid4()).split('-')[0]
+        return f"{nowPrefix}_{countStr}_{uuidSuffix}"
+
+    def _createBatch(self, items):
+        batch_id = self._createBatchId()
+        batch_path = os.path.join(self._workingPath, batch_id)
+        print(f"Creating batch: {batch_path}")
+        Process.system(f"rm -rf '{batch_path}'")
+        Process.system(f"mkdir '{batch_path}'")
+
+        for item in items:
+            fn = self._itemFileNameFunc(item)
+            baseName = os.path.basename(fn)
+            os.symlink(os.path.abspath(fn),
+                       os.path.join(batch_path, baseName))
+        self._batchCount += 1
+        return {
+            'items': items,
+            'id': batch_id,
+            'path': batch_path,
+            'index': self._batchCount
+        }
+
     def generate(self):
         """ Generate batches based on the input items. """
-        def _createBatch(items):
-            batch_id = str(uuid4())
-            batch_path = os.path.join(self._workingPath, batch_id)
-            ts = Pretty.now()
-
-            print(f"{ts}: Creating batch: {batch_path}")
-            Process.system(f"rm -rf '{batch_path}'")
-            Process.system(f"mkdir '{batch_path}'")
-
-            for item in items:
-                fn = self._itemFileNameFunc(item)
-                baseName = os.path.basename(fn)
-                os.symlink(os.path.abspath(fn),
-                           os.path.join(batch_path, baseName))
-            self._batchCount += 1
-            return {
-                'items': items,
-                'id': batch_id,
-                'path': batch_path,
-                'index': self._batchCount
-            }
-
         items = []
 
         for item in self._items:
             items.append(item)
 
             if len(items) == self._batchSize:
-                yield _createBatch(items)
+                yield self._createBatch(items)
                 items = []
 
         if items:
-            yield _createBatch(items)
+            yield self._createBatch(items)

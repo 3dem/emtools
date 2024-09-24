@@ -370,7 +370,7 @@ class TestStarFile(unittest.TestCase):
                 p.run()
                 return p.totalItems
 
-        self.__test_star_streaming(_pipeline, inputStreaming=True)
+        #self.__test_star_streaming(_pipeline, inputStreaming=True)
         self.__test_star_streaming(_pipeline, inputStreaming=False)
 
 

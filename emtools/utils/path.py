@@ -166,8 +166,8 @@ class Path:
     @staticmethod
     def replaceExt(filename, newExt):
         """ Replace the current path extension(from last .)
-        with a new one. The new one should not contain the ."""
-        return Path.removeExt(filename) + '.' + newExt
+        with a new one. The new one should contain the ."""
+        return Path.removeExt(filename) + newExt
 
     @staticmethod
     def replaceBaseExt(filename, newExt):
@@ -185,6 +185,11 @@ class Path:
     def removeExt(filename):
         """ Remove extension from basename """
         return os.path.splitext(filename)[0]
+
+    @staticmethod
+    def getExt(filename):
+        """ Get filename extension """
+        return os.path.splitext(filename)[1]
 
     @staticmethod
     def exists(path):

@@ -26,14 +26,14 @@ class StarPipelineTester(Pipeline):
     """ Helper class to test Pipeline behaviour base on an input
     STAR file generated in streaming.
     """
-    def __init__(self, inputStar, workingDir, **kwargs):
+    def __init__(self, inputStar, outputDir, **kwargs):
         Pipeline.__init__(self)
 
         self.threads = kwargs.get('threads', 4)
         self.batchSize = kwargs.get('batchSize', 128)
-        self.workingDir = workingDir
+        self.outputDir = outputDir
         self.inputStar = inputStar
-        self.outputStar = os.path.join(workingDir, 'output.star')
+        self.outputStar = os.path.join(outputDir, 'output.star')
         self._sf = None
         self._file = None
         self.totalItems = 0
@@ -45,7 +45,7 @@ class StarPipelineTester(Pipeline):
                               lambda row: row.rlnImageId,
                               timeout=30)
 
-        batchMgr = BatchManager(self.batchSize, monitor.newItems(), workingDir,
+        batchMgr = BatchManager(self.batchSize, monitor.newItems(), outputDir,
                                 itemFileNameFunc=self._filename)
 
         g = self.addGenerator(batchMgr.generate)
