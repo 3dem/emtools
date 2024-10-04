@@ -267,11 +267,27 @@ def create_project(workingDir):
     def _path(*p):
         return os.path.join(workingDir, *p)
 
+    """
+        {"acquisition": {"voltage": 200, "magnification": 79000, "pixel_size": 1.044, "dose": 1.063, "cs": 2.7}}
+    """
+
     scipionOptsFn = _path('scipion_otf_options.json')
     relionOptsFn = _path('relion_it_options.py')
 
-    with open(scipionOptsFn) as f:
-        opts = json.load(f)
+    if os.path.exists(scipionOptsFn):
+        with open(scipionOptsFn) as f:
+            opts = json.load(f)
+
+    elif os.path.exists(relionOptsFn):
+        with open(_path('relion_it_options.py')) as f:
+            relionOpts = OrderedDict(ast.literal_eval(f.read()))
+            opts = {'acquisition': {
+                'voltage': relionOpts['prep__importmovies__kV'],
+                'pixel_size': relionOpts['prep__importmovies__angpix'],
+                'cs': relionOpts['prep__importmovies__Cs'],
+                'magnification': 130000,
+                'dose': relionOpts['prep__motioncorr__dose_per_frame']
+            }}
 
     acq = opts['acquisition']
     picking = opts.get('picking', {})
@@ -377,11 +393,6 @@ def create_project(workingDir):
 
     wf.launchProtocol(protCryolo, wait={OUT_COORD: 100})
 
-    skip_2d = not opts.get('2d', True)
-
-    if skip_2d:
-        return
-
     calculateBoxSize(protCryolo)
 
     protRelionExtract = wf.createProtocol(
@@ -465,7 +476,7 @@ def print_protocol(workingDir, protId):
     if protId == 'all':
         for prot in project.getRuns(iterate=True):
             clsName = prot.getClassName()
-            print(f"- {prot.getObjId():>6} {prot.getStatus():<10} {clsName:<30} - {prot.getRunName()}")
+            print(f"- {prot.getObjId():>8} {prot.getStatus():<10} {clsName}")
     else:
         prot = project.getProtocol(int(protId))
         if prot is None:
@@ -560,9 +571,6 @@ def write_coordinates(micStarFn, prot):
 
     for coord in coords.iterItems(orderBy='_micId', direction='ASC'):
         micId = coord.getMicId()
-        if micId not in micDict:
-            continue
-
         if micId not in micIds:
             micIds.add(micId)
             micFn = micDict[micId]
@@ -590,9 +598,7 @@ def print_prot(prot, label='Protocol'):
 
 
 def write_stars(workingDir, ids=None):
-    """ Write star files for Relion. Generates micrographs_ctf.star,
-     coordinates.star and Coordinates folder.
-    """
+    """ Restart one or more protocols. """
     print("ids", ids)
 
     def _get_keys(tokens):
@@ -610,12 +616,8 @@ def write_stars(workingDir, ids=None):
         idsDict = {k: v for k, v in _get_keys(ids)}
         if 'ctfs' in idsDict:
             protCtf = project.getProtocol(idsDict['ctfs'])
-            if protCtf is None:
-                raise Exception(f"There is no CTF protocol with id {idsDict['ctfs']}")
         if 'picking' in idsDict:
             protPicking = project.getProtocol(idsDict['picking'])
-            if protPicking is None:
-                raise Exception(f"There is no CTF protocol with id {idsDict['picking']}")
     else:
         # Default option when running OTF that we export STAR files
         # from CTFFind and Cryolo runs
@@ -702,7 +704,7 @@ def main():
     p = argparse.ArgumentParser(prog='scipion-otf')
     g = p.add_mutually_exclusive_group()
 
-    g.add_argument('--create', metavar='Scipion project path',
+    g.add_argument('--create', action='store_true',
                        help="Create a new Scipion project in the working "
                             "directory. This will overwrite any existing "
                             "'scipion' folder there.")
@@ -719,7 +721,6 @@ def main():
     g.add_argument('--clean', action="store_true",
                    help="Clean Scipion project files/folders.")
     g.add_argument('--continue_2d', action="store_true")
-
     g.add_argument('--write_stars', default=argparse.SUPPRESS, nargs='*',
                    help="Generate STAR micrographs and particles STAR files."
                         "By default, it will get the first CTFfind protocol for ctfs"
@@ -736,7 +737,7 @@ def main():
     args = p.parse_args()
 
     if args.create:
-        create_project(args.create)
+        create_project(cwd)
     elif args.restart:
         restart(cwd, args.restart)
     elif args.restart_rankers:

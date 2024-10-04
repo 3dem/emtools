@@ -16,8 +16,11 @@
 
 # This emtools submodule need Scipion environment
 
-from .monitors import ProtocolMonitor, SetMonitor, BatchManager
+from .monitors import ProtocolMonitor, SetMonitor
 from .workflow import Workflow
+
+# This is imported here for backward compatibility
+from emtools.jobs import BatchManager
 
 
 __all__ = ["ProtocolMonitor", "SetMonitor", "Workflow", "BatchManager"]

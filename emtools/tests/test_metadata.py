@@ -16,11 +16,19 @@
 import os
 import unittest
 import tempfile
+import random
+import time
+import threading
+import tempfile
 from pprint import pprint
+from datetime import datetime
 
-from emtools.utils import Timer, Color
-from emtools.metadata import StarFile, SqliteFile, EPU
+from emtools.utils import Timer, Color, Pretty
+from emtools.metadata import StarFile, SqliteFile, EPU, StarMonitor
+from emtools.jobs import BatchManager
 from emtools.tests import testpath
+
+from .star_pipeline_tester import StarPipelineTester
 
 # Try to load starfile library to launch some comparisons
 try:
@@ -240,6 +248,131 @@ class TestStarFile(unittest.TestCase):
 
         os.unlink(ftmp.name)
 
+    def __test_star_streaming(self, monitorFunc, inputStreaming=True):
+        partStar = testpath('metadata', 'particles_1k.star')
+        if partStar is None:
+            return
+
+        N = 1000
+
+        with StarFile(partStar) as sf:
+            ptable = sf.getTable('particles')
+            self.assertEqual(len(ptable), N)
+            otable = sf.getTable('optics')
+            self.assertEqual(len(otable), 1)
+
+        ftmp = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.star')
+        print(f">>>> Using temporary file: {ftmp.name}")
+
+        def _write_star_parts():
+            with StarFile(ftmp) as sfOut:
+                sfOut.writeTable('optics', otable)
+                if inputStreaming:
+                    sfOut.writeHeader('particles', ptable)
+                    u = int(random.uniform(5, 10))
+                    s = u * 10
+                    w = 0
+                    for i, row in enumerate(ptable):
+                        if i == s:
+                            print(f"{w} rows written.")
+                            ftmp.flush()
+                            time.sleep(3)
+                            u = int(random.uniform(5, 10))
+                            s = i + u * 10
+                            w = 0
+                        sfOut.writeRow(row)
+                        w += 1
+                else:
+                    sfOut.writeTable('particles', ptable)
+                    w = len(ptable)
+
+                print(f"{w} rows written.")
+
+        th = threading.Thread(target=_write_star_parts)
+        print(">>> Starting thread...")
+        th.start()
+
+        monitor = StarMonitor(ftmp.name, 'particles',
+                              lambda row: row.rlnImageId,
+                              timeout=30)
+
+        totalCount = monitorFunc(monitor)
+        self.assertEqual(totalCount, N)
+
+        print("<<< Waiting for thread")
+        th.join()
+
+        ftmp.close()
+
+        # Check output is what we expect
+        with StarFile(ftmp.name) as sf:
+            ptable = sf.getTable('particles')
+            self.assertEqual(len(ptable), N)
+            otable = sf.getTable('optics')
+            self.assertEqual(len(otable), 1)
+
+        os.unlink(ftmp.name)
+
+    def test_star_monitor(self):
+        """ Basic test checking that we are able to monitor a streaming
+        generated star file. The final count of rows should be the
+        same as the input one.
+        """
+        def _monitor(monitor):
+            totalRows = 0
+            while not monitor.timedOut():
+                newRows = monitor.update()
+                n = len(newRows)
+                totalRows += n
+                print(f"New rows: {n}")
+                print(f"Last update: {Pretty.datetime(monitor.lastUpdate)} "
+                      f"Last check: {Pretty.datetime(monitor.lastCheck)} "
+                      f"No activity: {Pretty.delta(monitor.lastCheck - monitor.lastUpdate)}")
+                time.sleep(5)
+            return totalRows
+
+        self.__test_star_streaming(_monitor)
+
+    def test_star_batchmanager(self):
+        """ Testing the creating of batches from an input star monitor
+        using different batch sizes.
+        """
+
+        def _filename(row):
+            """ Helper to get unique name from a particle row. """
+            pts, stack = row.rlnImageName.split('@')
+            return stack.replace('.mrcs', f'_p{pts}.mrcs')
+
+        def _batchmanager(monitor, batchSize):
+            totalFiles = 0
+
+            with tempfile.TemporaryDirectory() as tmp:
+                print(f"Using dir: {tmp}")
+
+                batchMgr = BatchManager(batchSize, monitor.newItems(), tmp,
+                                        itemFileNameFunc=_filename)
+
+                for batch in batchMgr.generate():
+                    files = len(os.listdir(batch['path']))
+                    print(f"Batch {batch['id']} -> {batch['path']}, files: {files}")
+                    totalFiles += files
+
+            return totalFiles
+
+        self.__test_star_streaming(lambda m: _batchmanager(m, 128))
+        self.__test_star_streaming(lambda m: _batchmanager(m, 200))
+
+    def test_star_pipeline(self):
+        def _pipeline(monitor):
+            with tempfile.TemporaryDirectory() as tmp:
+                print(f"Using dir: {tmp}")
+                p = StarPipelineTester(monitor.fileName, tmp)
+                p.run()
+                return p.totalItems
+
+        #self.__test_star_streaming(_pipeline, inputStreaming=True)
+        self.__test_star_streaming(_pipeline, inputStreaming=False)
+
 
 class TestEPU(unittest.TestCase):
     """ Tests for EPU class. """
@@ -264,6 +397,7 @@ class TestEPU(unittest.TestCase):
             print(f">>> Getting session info from: {Color.bold(sessionPath)}")
             session = EPU.get_session_info(sessionPath)
             pprint(session)
+
 
 
 class TestSqliteFile(unittest.TestCase):

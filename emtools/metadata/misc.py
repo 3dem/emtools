@@ -15,9 +15,10 @@
 # **************************************************************************
 
 import os
+
 from datetime import datetime, timedelta
 
-from emtools.utils import Path, Pretty
+from emtools.utils import Path, Pretty, Process
 
 
 class Bins:
