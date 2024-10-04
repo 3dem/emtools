@@ -128,8 +128,9 @@ class Rln2DPipeline(Pipeline):
     def _updateBatch(self, batch):
         self.lock.acquire()
         self.batches[batch['id']] = batch
-        _save_json(self._json)
+        self._save_json(self._json)
         self.lock.release()
+        
     def _createBatch2D(self, gridsquare, subsetParts):
         firstId, lastId = subsetParts[0].getObjId(), subsetParts[-1].getObjId()
         suffix = f"{gridsquare}: {firstId} - {lastId}"
