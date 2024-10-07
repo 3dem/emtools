@@ -25,8 +25,9 @@ from collections import OrderedDict
 import datetime as dt
 import re
 
-from emtools.utils import Process, Color, System, Pipeline
+from emtools.utils import Process, Color, System
 from emtools.metadata import EPU, SqliteFile, StarFile, Table
+from emtools.jobs import Pipeline
 
 import pyworkflow as pw
 from pyworkflow.project import Project
