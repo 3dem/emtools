@@ -17,9 +17,9 @@
 from .table import Column, ColumnList, Table
 from .starfile import StarFile, StarMonitor
 from .epu import EPU
-from .misc import Bins, TsBins, DataFiles, MovieFiles
+from .misc import Bins, TsBins, DataFiles, MovieFiles, Mdoc
 from .sqlite import SqliteFile
 
 
 __all__ = ["Column", "ColumnList", "Table", "StarFile", "StarMonitor", "EPU",
-           "Bins", "TsBins", "SqliteFile", "DataFiles", "MovieFiles"]
+           "Bins", "TsBins", "SqliteFile", "DataFiles", "MovieFiles", "Mdoc"]

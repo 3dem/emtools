@@ -14,6 +14,7 @@
 # *
 # **************************************************************************
 
+import os
 from collections import OrderedDict
 import threading
 
@@ -182,3 +183,30 @@ class TaskProcessor(TaskGenerator):
 
         self._print("Got task: None")
 
+
+class ProcessingPipeline(Pipeline):
+    """ Subclass of Pipeline that is commonly used to run programs.
+
+    This class will define a workingDir (usually os.getcwd)
+    and an output dir where all output should be generated.
+    It will also add some helper functions to manipulate file
+    paths relative to the working dir.
+    """
+    def __init__(self, workingDir, outputDir, **kwargs):
+        Pipeline.__init__(self, **kwargs)
+        self.workingDir = self.__validate(workingDir, 'working')
+        self.outputDir = self.__validate(outputDir, 'output')
+
+    def __validate(self, path, key):
+        if not path:
+            raise Exception(f'Invalid {key} directory: {path}')
+        if not os.path.exists(path):
+            raise Exception(f'Non-existing {key} directory: {path}')
+
+        return path
+
+    def join(self, *p):
+        return os.path.join(self.outputDir, *p)
+
+    def relpath(self, p):
+        return os.path.relpath(p, self.workingDir)

@@ -248,3 +248,42 @@ class MovieFiles(DataFiles):
     def print(self, sort=None):
         DataFiles.print(self, sort=sort)
         self.counters[1].print('movie')
+
+
+class Mdoc(dict):
+    """ Helper class to manipulate IMOD .mdoc files. """
+
+    @staticmethod
+    def parse(mdocFn):
+        mdoc = Mdoc()
+        mdoc['global'] = section = {}
+
+        with open(mdocFn, 'r') as f:
+            for line in f:
+                line = line.strip()
+
+                if not line or line.startswith(';'):  # Empty or comment lines
+                    continue
+
+                if line.startswith('['):  # Section header
+                    name = line[1:-1]
+                    mdoc[name] = section = {}
+                else:  # Key-value pair
+                    key, value = line.split('=', 1)
+                    section[key.strip()] = value.strip()
+
+        return mdoc
+
+    @property
+    def zvalues(self):
+        return [(k, v) for k, v in self.items() if k.startswith('ZValue')]
+
+    def write(self, path):
+        with open(path, 'w') as f:
+            for key, section in self.items():
+                if key != 'global':
+                    f.write(f"\n[{key}]\n")
+                for k, v in section.items():
+                    f.write(f"{k} = {v}\n")
+
+

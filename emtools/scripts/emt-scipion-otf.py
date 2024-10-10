@@ -477,7 +477,7 @@ def print_protocol(workingDir, protId):
     if protId == 'all':
         for prot in project.getRuns(iterate=True):
             clsName = prot.getClassName()
-            print(f"- {prot.getObjId():>8} {prot.getStatus():<10} {clsName}")
+            print(f"- {prot.getObjId():>8} {prot.getStatus():<10} {clsName:<40} {prot.getRunName()}")
     else:
         prot = project.getProtocol(int(protId))
         if prot is None:
