@@ -15,8 +15,11 @@
 # **************************************************************************
 
 import os
+import sys
 from collections import OrderedDict
 import threading
+import signal
+import traceback
 
 
 class Pipeline:
@@ -205,8 +208,49 @@ class ProcessingPipeline(Pipeline):
 
         return path
 
+    def get_arg(self, argDict, key, envKey, default=None):
+        """ Get an argument from the argDict or from the environment.
+
+        Args:
+            argDict: arguments dict from where to get the 'key' value
+            key: string key of the argument name in argDict
+            envKey: string key of the environment variable
+            default: default value if not found in argDict or environ
+        """
+        return argDict.get(key, os.environ.get(envKey, default))
+
     def join(self, *p):
         return os.path.join(self.outputDir, *p)
 
     def relpath(self, p):
         return os.path.relpath(p, self.workingDir)
+
+    def prerun(self):
+        """ This method will be called before the run. """
+        pass
+
+    def postrun(self):
+        """ This method will be called after the run. """
+        pass
+
+    def __file(self, suffix):
+        with open(self.join(f'RELION_JOB_EXIT_{suffix}'), 'w'):
+            pass
+
+    def __abort(self, signum, frame):
+        self.__file('ABORTED')
+        sys.exit(0)
+
+    def run(self):
+        try:
+            signal.signal(signal.SIGINT, self.__abort)
+            signal.signal(signal.SIGTERM, self.__abort)
+            self.prerun()
+            Pipeline.run(self)
+            self.postrun()
+            self.__file('SUCCESS')
+        except Exception as e:
+            self.__file('FAILURE')
+            traceback.print_exc()
+
+
