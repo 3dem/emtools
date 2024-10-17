@@ -310,6 +310,10 @@ class StarFile(AbstractContextManager):
                 self._file.close()
             self._file = None
 
+    def flush(self):
+        if getattr(self, '_file', None):
+            self._file.flush()
+
     # ---------------------- Writer functions --------------------------------
     def writeLine(self, line):
         """ Write a line to the opened file. """
@@ -321,9 +325,11 @@ class StarFile(AbstractContextManager):
     def writeSingleRow(self, tableName, row):
         """ Write a Row as a single row Table of label/value pairs. """
         self._writeTableName(tableName)
-        m = max([len(c) for c in row._fields]) + 5
+        d = row if isinstance(row, dict) else row._asdict()
+        m = max(len(c) for c in d) + 5
         format = "_{:<%d} {:>10}\n" % m
-        for col, value in row._asdict().items():
+        d = row if isinstance(row, dict) else row._asdict()
+        for col, value in d.items():
             self._file.write(format.format(col, _escapeStrValue(value)))
         self._file.write('\n\n')
 

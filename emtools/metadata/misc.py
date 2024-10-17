@@ -287,3 +287,12 @@ class Mdoc(dict):
                     f.write(f"{k} = {v}\n")
 
 
+class TextFile:
+    @staticmethod
+    def stripLines(fn, **kwargs):
+        with open(fn) as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#'):
+                    yield line
+
