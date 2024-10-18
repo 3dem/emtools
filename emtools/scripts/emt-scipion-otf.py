@@ -25,8 +25,9 @@ from collections import OrderedDict
 import datetime as dt
 import re
 
-from emtools.utils import Process, Color, System, Pipeline
+from emtools.utils import Process, Color, System
 from emtools.metadata import EPU, SqliteFile, StarFile, Table
+from emtools.jobs import Pipeline
 
 import pyworkflow as pw
 from pyworkflow.project import Project
@@ -476,7 +477,7 @@ def print_protocol(workingDir, protId):
     if protId == 'all':
         for prot in project.getRuns(iterate=True):
             clsName = prot.getClassName()
-            print(f"- {prot.getObjId():>8} {prot.getStatus():<10} {clsName}")
+            print(f"- {prot.getObjId():>8} {prot.getStatus():<10} {clsName:<40} {prot.getRunName()}")
     else:
         prot = project.getProtocol(int(protId))
         if prot is None:

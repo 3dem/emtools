@@ -14,7 +14,7 @@
 # *
 # **************************************************************************
 
-from .pipeline import Pipeline
+from .pipeline import Pipeline, ProcessingPipeline
 from .batch_manager import BatchManager
 
-__all__ = ["Pipeline", "BatchManager"]
+__all__ = ["Pipeline", "BatchManager", "ProcessingPipeline"]
