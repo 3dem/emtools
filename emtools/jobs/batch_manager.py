@@ -52,22 +52,22 @@ class BatchManager:
         uuidSuffix = str(uuid4()).split('-')[0]
         return f"{nowPrefix}_{countStr}_{uuidSuffix}"
 
-    @staticmethod
-    def createBatchLink(batch_path, fn):
-        """ Create a symbolic link to fn inside the batch dir. """
-        baseName = os.path.basename(fn)
-        os.symlink(os.path.abspath(fn),
-                   os.path.join(batch_path, baseName))
-
-    def _createBatch(self, items):
+    def _createBatch(self, items, inputFolder=None):
         batch_id = self._createBatchId()
         batch_path = os.path.join(self._workingPath, batch_id)
         print(f"Creating batch: {batch_path}")
         Process.system(f"rm -rf '{batch_path}'")
         Process.system(f"mkdir '{batch_path}'")
+        if inputFolder is not None:
+            Process.system(f"mkdir '{batch_path}/{inputFolder}'")
 
         for item in items:
-            self.createBatchLink(batch_path, self._itemFileNameFunc(item))
+            fn = self._itemFileNameFunc(item)
+            baseName = os.path.basename(fn)
+            if inputFolder is not None:
+                baseName = os.path.join(inputFolder, baseName)
+            os.symlink(os.path.abspath(fn),
+                       os.path.join(batch_path, baseName))
 
         self._batchCount += 1
         return {
