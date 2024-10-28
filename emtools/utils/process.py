@@ -56,7 +56,7 @@ class Process:
             print(self.stdout)
 
     @staticmethod
-    def system(cmd, only_print=False, color=None):
+    def system(cmd, only_print=False, color=None, do_print=True):
         """ Execute and print a command.
 
         Args:
@@ -65,8 +65,9 @@ class Process:
                 not executed
             color: Optional color for the command
         """
-        printCmd = cmd if color is None else color(cmd)
-        print(printCmd)
+        if do_print:
+            printCmd = cmd if color is None else color(cmd)
+            print(printCmd)
         if not only_print:
             return os.system(cmd)
 
