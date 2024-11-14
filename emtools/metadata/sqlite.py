@@ -81,8 +81,6 @@ class SqliteFile(AbstractContextManager):
                 classes: read column names from a 'classes' table
         """
         where = kwargs.get('where', '1')
-        printMap = kwargs.get('printMap', False)
-
         query = f"SELECT * FROM {tableName} WHERE {where}"
 
         if 'start' in kwargs and 'limit' not in kwargs:
@@ -101,10 +99,6 @@ class SqliteFile(AbstractContextManager):
         else:
             columnsMap = {row['column_name']: row['label_property']
                           for row in self.iterTable(kwargs['classes'])}
-
-            if printMap:
-                from pprint import pprint
-                pprint(columnsMap)
 
             def _row_factory(cursor, row):
                 fields = [column[0] for column in cursor.description]
