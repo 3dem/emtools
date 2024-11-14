@@ -15,6 +15,7 @@
 # **************************************************************************
 
 from datetime import datetime
+from functools import wraps
 
 from .pretty import Pretty
 
@@ -51,3 +52,13 @@ class Timer(object):
 
     def __exit__(self, type, value, traceback):
         self.toc(self.message)
+
+    @staticmethod
+    def timeit(func):
+        @wraps(func)
+        def wrap(*args, **kw):
+            t = Timer()
+            result = func(*args, **kw)
+            t.toc(f"Function {func.__name__} took: ")
+            return result
+        return wrap

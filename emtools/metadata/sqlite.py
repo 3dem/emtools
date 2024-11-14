@@ -80,7 +80,8 @@ class SqliteFile(AbstractContextManager):
                 limit: limit to this number of elements
                 classes: read column names from a 'classes' table
         """
-        query = f"SELECT * FROM {tableName}"
+        where = kwargs.get('where', '1')
+        query = f"SELECT * FROM {tableName} WHERE {where}"
 
         if 'start' in kwargs and 'limit' not in kwargs:
             kwargs['limit'] = -1

@@ -121,12 +121,11 @@ class SetMonitor(OrderedDict):
         self._filename = filename
         self.lastUpdate = None
         self.streamClosed = None
-        self.inputCount = 0  # Count all input elements
 
         # Black list some items to not be monitored again
         # We are not interested in the items but just skip them from
         # the processing
-        blacklist = kwargs.get('blacklist', None)
+        blacklist = kwargs.get('blacklist', [])
         if blacklist:
             for item in blacklist:
                 self[item.getObjId()] = True
@@ -140,7 +139,6 @@ class SetMonitor(OrderedDict):
             setInstance = self._SetClass(filename=self._filename)
             setInstance.loadAllProperties()
             for item in setInstance.iterItems():
-                self.inputCount += 1
                 iid = item.getObjId()
                 if iid not in self:
                     itemClone = item.clone()
