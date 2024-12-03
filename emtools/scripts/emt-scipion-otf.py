@@ -24,6 +24,7 @@ import time
 from collections import OrderedDict
 import datetime as dt
 import re
+from pprint import pprint
 
 from emtools.utils import Process, Color, System
 from emtools.metadata import EPU, SqliteFile, StarFile, Table
@@ -314,7 +315,7 @@ def create_project(workingDir):
         sphericalAberration=acq['cs'],
         doseInitial=0.0,
         dosePerFrame=acq['dose'],
-        gainFile=gain,
+        gainFile=os.path.abspath(gain),
         dataStreaming=True
     )
 
@@ -346,6 +347,7 @@ def create_project(workingDir):
         'motioncorr.protocols.ProtMotionCorrTasks',
         objLabel='motioncor',
         patchX=patchX, patchY=patchY,
+        gainFlip=1, # Fli
         numberOfThreads=1,
         streamingBatchSize=16,
         gpuList=' '.join(str(g) for g in params['mcGpus'])
@@ -701,6 +703,179 @@ def fix_run_links(workingDir, srcRuns):
             logger.system(f"cd Runs && ln -s runs/{fn}")
 
 
+class CryoSparc:
+    STATUS_FAILED = "failed"
+    STATUS_ABORTED = "aborted"
+    STATUS_COMPLETED = "completed"
+    STATUS_KILLED = "killed"
+    STATUS_RUNNING = "running"
+    STATUS_QUEUED = "queued"
+    STATUS_LAUNCHED = "launched"
+    STATUS_STARTED = "started"
+    STATUS_BUILDING = "building"
+
+    STOP_STATUSES = [STATUS_ABORTED, STATUS_COMPLETED, STATUS_FAILED, STATUS_KILLED]
+    ACTIVE_STATUSES = [STATUS_QUEUED, STATUS_RUNNING, STATUS_STARTED,
+                       STATUS_LAUNCHED, STATUS_BUILDING]
+
+    def __init__(self, projId):
+        self.projId = projId
+        from cryosparc.tools import CryoSPARC, CommandClient
+        cs_config = os.environ.get('CRYOSPARC_CONFIG', None)
+        if cs_config is None:
+            raise Exception('Please define CRYOSPARC_CONFIG="LICENSE|URL|PORT"')
+
+        license, url, port = cs_config.split('|')
+        print("\n>>> Using license: ", Color.green(license))
+        print(">>> URL/port: ", Color.bold(f"{url}:{port}"))
+        self._cli = CommandClient(host=url, port=port, headers={"License-ID": license})
+        projInfo = self.cli('get_project', projId)
+        print("\n", "=" * 20, Color.green(f"PROJECT: {projId}"), "=" * 20)
+        pprint(projInfo)
+        print("=" * 50, "\n")
+        self.userId = projInfo['owner_user_id']
+        lanes = self.cli('get_scheduler_lanes')
+        pprint(lanes)
+
+    def __call__(self, cmd, **kwargs):
+        p = Process(self.csm, 'cli', cmd)
+        lines = list(p.lines())
+
+        try:
+            for i, line in enumerate(lines):
+                print(Color.cyan(i), Color.bold(line))
+            return lines[0]
+        except Exception as e:
+            print(Color.red(f"Error: running command {cmd}"))
+            print(e)
+
+    def _argstr(self, args):
+        return json.dumps(args).replace('true', 'True')
+
+    def cli(self, function, *args, **kwargs):
+        def _val(v):
+            return Color.bold(json.dumps(v))
+
+        argsStr = ','.join(_val(a) for a in args)
+        sepStr = ', ' if argsStr else ''
+        kwargsStr = ','.join("%s=%s" % (Color.cyan(k), _val(v)) for k, v in kwargs.items())
+        print(f"\n{Color.green(function)}({argsStr}{sepStr}{kwargsStr})")
+        func = getattr(self._cli, function)
+        return func(*args, **kwargs)
+
+    def job_status(self, jobId):
+        """ Return the job status. """
+        status = self.cli('get_job_status', project_uid=self.projId, job_uid=jobId)
+        print(status)
+        return status
+
+    def job_wait(self, jobId):
+        """ Wait for a job to complete (in any stop status). """
+        while self.job_status(jobId) not in self.STOP_STATUSES:
+            time.sleep(10)
+
+    def job_run(self, wsId, jobType, args, inputs={}, wait=True):
+        #cmd = (f'make_job("{jobType}", "{self.projId}", "{wsId}", "{self.userId}", None, None, None, '
+        #       f'{self._argstr(args)}, {self._argstr(inputs)})')
+        #jobId = self(cmd)
+        # jobId = self._cli.make_job(job_type=jobType, project_uid=self.projId, workspace_uid=wsId,
+        #                           user_id=self.userId, params=args, input_group_connects=inputs)
+        jobId = self.cli('make_job',
+                         job_type=jobType, project_uid=self.projId, workspace_uid=wsId,
+                         user_id=self.userId, params=args, input_group_connects=inputs)
+        #cmd = f'enqueue_job("{self.projId}", "{jobId}", "default", "{self.userId}")'
+        #self(cmd)
+        #self._cli.enqueue_job(project_uid=self.projId, user_id=self.userId, job_uid=jobId, lane='default')
+        self.cli('enqueue_job',
+                 project_uid=self.projId, user_id=self.userId, job_uid=jobId)
+        if wait:
+            self.job_wait(jobId)
+
+        return jobId
+
+
+def cryosparc_prepare():
+    if os.path.exists('CS'):
+        raise Exception("CS folder already exists. Remove it before running this command.")
+
+    logger = Process.Logger(format="%(message)s", only_log=False)#True)
+
+    for folder in ['Micrographs', 'Movies', 'XML']:
+        logger.mkdir(f'CS/{folder}')
+
+    fn = 'micrographs_ctf.star'
+
+    with StarFile(fn) as sf:
+        with StarFile('CS/particles.star', 'w') as sfOut:
+            ctfCols = ['rlnDefocusU', 'rlnDefocusV', 'rlnDefocusAngle', 'rlnCtfFigureOfMerit', 'rlnCtfMaxResolution']
+            ctfCols = []  # CS is giving an error when using CTF
+            t = Table(['rlnMicrographName', 'rlnCoordinateX', 'rlnCoordinateY'] + ctfCols)
+            print("cols", len(t.getColumnNames()), t.getColumnNames())
+
+            sfOut.writeHeader('particles', t)
+
+            for row in sf.iterTable('micrographs'):
+                micFn = row.rlnMicrographName
+                movFn = row.rlnMicrographMovieName.replace('Images-Disc1_', '')
+                xmlFn = movFn.replace('_EER.eer', '.xml')
+                base = os.path.basename(micFn)
+                micName = base.replace('_DW.mrc', '')
+                movName = micName.replace('mic_', 'mov_')
+                logger.system(f'ln -s ../../{micFn} CS/Micrographs/{micName}.mrc')
+                logger.system(f'ln -s ../../{movFn} CS/Movies/{movName}.eer')
+                logger.system(f'ln -s ../../{xmlFn} CS/XML/{movName}.xml')
+                coordsFn = f'Coordinates/{micName}_DW_coordinates.star'
+                ctfValues = [getattr(row, k) for k in ctfCols]
+                print(len(ctfValues))
+                with StarFile(coordsFn) as sfCoords:
+                    for rowCoord in sfCoords.iterTable(''):
+                        sfOut.writeRow(t.Row(f'{micName}.mrc',
+                                             rowCoord.rlnCoordinateX,
+                                             rowCoord.rlnCoordinateY,
+                                             *ctfValues))
+
+
+def cryosparc_import(projId, dataRoot):
+
+    acq = {
+        "psize_A": 0.724,
+        "accel_kv": 300,
+        "cs_mm": 0.1,
+    }
+
+    cs = CryoSparc(projId)
+    csRoot = os.path.join(dataRoot, 'CS')
+
+    print(f">>> Importing data from: {Color.green(dataRoot)}")
+
+    args = {
+        "blob_paths": f"{csRoot}/Micrographs/mic_*.mrc",
+        "total_dose_e_per_A2": 40,
+        "parse_xml_files": True,
+        "xml_paths": f"{csRoot}/XML/mov_*.xml",
+        "mov_cut_prefix_xml": 4,
+        "mov_cut_suffix_xml": 4,
+        "xml_cut_prefix_xml": 4,
+        "xml_cut_suffix_xml": 4
+    }
+    args.update(acq)
+    micsImport = cs.job_run("W1", "import_micrographs", args)
+    time.sleep(5)  # FIXME: wait for job completion
+    args = {
+        "ignore_blob": True,
+        "particle_meta_path": f"{csRoot}/particles.star",
+        "query_cut_suff": 4,
+        "remove_leading_uid": True,
+        "source_cut_suff": 4,
+        "enable_validation": True,
+        "location_exists": True,
+        "amp_contrast": 2.7,
+    }
+    args.update(acq)
+    ptsImport = cs.job_run("W1", "import_particles", args,
+                          {'micrographs': f'{micsImport}.imported_micrographs'})
+
+
 def main():
     p = argparse.ArgumentParser(prog='scipion-otf')
     g = p.add_mutually_exclusive_group()
@@ -728,6 +903,15 @@ def main():
                         "and the Cryolo picking for picking. One can pass a string"
                         "with the protocol ids for ctfs and/or picking. For example:"
                         "--write_starts 'ctfs=1524 picking=1711'")
+    g.add_argument('--cs_prepare', action='store_true',
+                   help="Prepare a folder CS to be used to import movies, micrographs "
+                        "and particles into CryoSparc. ")
+    g.add_argument('--cs_import', nargs='+',
+                   metavar=('CRYOSPARC_PROJECT_ID', 'DATA_ROOT'),
+                   help="Import data from CS into a running project. ")
+    #get_scheduler_lanes
+    g.add_argument('--cs_test', metavar='CRYOSPARC_PROJECT_ID',
+                   help="Test connection to CryoSparc server. ")
     g.add_argument('--clone_project', nargs=2, metavar=('SRC', 'DST'),
                    help="Clone an existing Scipion project")
     g.add_argument('--fix_run_links', metavar='RUNS_SRC',
@@ -762,6 +946,14 @@ def main():
         fix_run_links(cwd, args.fix_run_links)
     elif protId := args.print_protocol:
         print_protocol(cwd, protId)
+    elif cs := args.cs_prepare:
+        cryosparc_prepare()
+    elif projId := args.cs_test:
+        cs = CryoSparc(projId)
+    elif cs := args.cs_import:
+        projId = cs[0]
+        dataRoot = cs[1]
+        cryosparc_import(projId, dataRoot)
     else:  # by default open the GUI
         from pyworkflow.gui.project import ProjectWindow
         ProjectWindow(cwd).show()
