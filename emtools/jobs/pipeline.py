@@ -20,6 +20,9 @@ from collections import OrderedDict
 import threading
 import signal
 import traceback
+from uuid import uuid4
+
+from emtools.utils import Process
 
 
 class Pipeline:
@@ -195,10 +198,15 @@ class ProcessingPipeline(Pipeline):
     It will also add some helper functions to manipulate file
     paths relative to the working dir.
     """
-    def __init__(self, workingDir, outputDir, **kwargs):
-        Pipeline.__init__(self, **kwargs)
+    def __init__(self, **kwargs):
+        workingDir = kwargs.pop('working_dir', os.getcwd())
+        outputDir = kwargs.pop('output_dir', None)
+        scratchDir = kwargs.pop('scratch', None)
+        Pipeline.__init__(self, debug=kwargs.get('debug', False))
         self.workingDir = self.__validate(workingDir, 'working')
         self.outputDir = self.__validate(outputDir, 'output')
+        self.scratchDir = self.__validate(scratchDir, 'scratch') if scratchDir else None
+        self.tmpDir = self.join('tmp')
 
     def __validate(self, path, key):
         if not path:
@@ -207,6 +215,18 @@ class ProcessingPipeline(Pipeline):
             raise Exception(f'Non-existing {key} directory: {path}')
 
         return path
+
+    def __clean_tmp(self):
+        Process.system(f"rm -rf {self.tmpDir}")
+
+    def __create_tmp(self):
+        self.__clean_tmp()
+
+        if self.scratchDir:
+            scratchTmp = os.path.join(self.scratchDir, str(uuid4()))
+            Process.system(f"ln -s {scratchTmp} {self.tmpDir}")
+        else:
+            Process.system(f"mkdir {self.tmpDir}")
 
     def get_arg(self, argDict, key, envKey, default=None):
         """ Get an argument from the argDict or from the environment.
@@ -245,9 +265,11 @@ class ProcessingPipeline(Pipeline):
         try:
             signal.signal(signal.SIGINT, self.__abort)
             signal.signal(signal.SIGTERM, self.__abort)
+            self.__create_tmp()
             self.prerun()
             Pipeline.run(self)
             self.postrun()
+            self.__clean_tmp()
             self.__file('SUCCESS')
         except Exception as e:
             self.__file('FAILURE')
