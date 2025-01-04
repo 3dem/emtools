@@ -15,12 +15,16 @@
 # **************************************************************************
 
 import os
+import shutil
 import time
+import tempfile
 from datetime import datetime as dt
 from collections import OrderedDict
+from contextlib import contextmanager
 
 from .pretty import Pretty
 from .process import Process
+from .color import Color
 
 
 class Path:
@@ -162,6 +166,32 @@ class Path:
             for f in files:
                 _copy(os.path.join(root, f), os.path.join(root2, f), **kwargs)
 
+
+    @staticmethod
+    @contextmanager
+    def tmpDir(**kwargs):
+        tmp = tempfile.mkdtemp(prefix=kwargs.get('prefix', ''))
+
+        chdir = kwargs.get('chdir', False)
+        cwd = os.getcwd()
+        if chdir:
+            os.chdir(tmp)
+
+        if kwargs.get('verbose', True):
+            print(f"Using temporary dir: {tmp}")
+
+        yield tmp
+
+        if chdir:
+            os.chdir(cwd)
+
+        globalClean = int(os.environ.get('EMWRAP_CLEAN', 1))
+        if kwargs.get('clean', globalClean):
+            shutil.rmtree(tmp)
+        else:
+            print(f"Temporary directy was not deleted, "
+                  f"remove it with the following command: \n"
+                  f"{Color.bold('rm -rf %s' % tmp)}")
 
     @staticmethod
     def replaceExt(filename, newExt):
