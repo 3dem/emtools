@@ -21,6 +21,34 @@ from datetime import datetime
 from emtools.utils import Process
 
 
+class Batch(dict):
+    """ Subclass from dict with some utilities related to Batch logic. """
+    @property
+    def id(self):
+        return self['id']
+
+    @property
+    def path(self):
+        return self['path']
+
+    @property
+    def index(self):
+        return self['index']
+
+    @property
+    def items(self):
+        return self['items']
+
+    def join(self, *p):
+        return os.path.join(self['path'], *p)
+
+    def mkdir(self, *p):
+        return os.mkdir(self.join(*p))
+
+    def exists(self, *p):
+        return os.path.exists(self.join(*p))
+
+
 class BatchManager:
     """ Class used to generate and handle the creation of batches
     from an input stream of items.
@@ -70,12 +98,12 @@ class BatchManager:
                        os.path.join(batch_path, baseName))
 
         self._batchCount += 1
-        return {
+        return Batch({
             'items': items,
             'id': batch_id,
             'path': batch_path,
             'index': self._batchCount
-        }
+        })
 
     def generate(self):
         """ Generate batches based on the input items. """
