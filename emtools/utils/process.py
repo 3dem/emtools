@@ -29,7 +29,8 @@ class Process:
         self.args = args
         error = ''
         try:
-            self._p = subprocess.run(args, capture_output=True, text=True)
+            self._p = subprocess.run(args, capture_output=True, text=True,
+                                     input=kwargs.get('input', None))
             self.stdout = self._p.stdout
             self.stderr = self._p.stderr
             self.returncode = self._p.returncode
@@ -46,7 +47,7 @@ class Process:
     def lines(self):
         """ Iterate over the lines of the process output.
         """
-        for line in self.stdout.split('\n'):
+        for line in self.stdout.splitlines():
             yield line
 
     def print(self, args=True, stdout=False):
