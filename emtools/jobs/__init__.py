@@ -15,6 +15,6 @@
 # **************************************************************************
 
 from .pipeline import Pipeline, ProcessingPipeline
-from .batch_manager import BatchManager
+from .batch_manager import Args, Batch, BatchManager
 
-__all__ = ["Pipeline", "BatchManager", "ProcessingPipeline"]
+__all__ = ["Pipeline", "BatchManager", "ProcessingPipeline", "Batch"]

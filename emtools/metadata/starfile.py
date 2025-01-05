@@ -29,6 +29,8 @@ from contextlib import AbstractContextManager
 from collections import OrderedDict
 from datetime import datetime, timedelta
 
+import emtools
+from emtools.utils import Pretty
 from .table import ColumnList, Table
 
 
@@ -318,6 +320,11 @@ class StarFile(AbstractContextManager):
     def writeLine(self, line):
         """ Write a line to the opened file. """
         self._file.write(f"{line}\n")
+
+    def writeTimeStamp(self):
+        """ Write a comment line with current datetime and library version. """
+        self.writeLine(f"\n# StarFile written on {Pretty.now()} "
+                       f"by emtools ({emtools.__version__})\n")
 
     def _writeTableName(self, tableName):
         self._file.write("\ndata_%s\n\n" % (tableName or ''))

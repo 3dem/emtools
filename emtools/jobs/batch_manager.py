@@ -17,8 +17,20 @@
 import os
 from uuid import uuid4
 from datetime import datetime
+import itertools
+import json
 
 from emtools.utils import Process
+
+
+class Args(dict):
+    """ Subclass from dict with some utilities related to arguments. """
+
+    def toList(self):
+        return list(itertools.chain.from_iterable([str(k), str(v)] for k, v in self.items()))
+
+    def toLine(self):
+        return ' '.join("%s %s" % (k, v) for k, v in self.items())
 
 
 class Batch(dict):
@@ -39,6 +51,12 @@ class Batch(dict):
     def items(self):
         return self['items']
 
+    @property
+    def info(self):
+        if 'info' not in self:
+            self['info'] = {}
+        return self['info']
+
     def join(self, *p):
         return os.path.join(self['path'], *p)
 
@@ -47,6 +65,10 @@ class Batch(dict):
 
     def exists(self, *p):
         return os.path.exists(self.join(*p))
+
+    def dump_info(self):
+        with open(self.join('info.json'), 'w') as batch_info:
+            json.dump(self.info, batch_info, indent=4)
 
 
 class BatchManager:
