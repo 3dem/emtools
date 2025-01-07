@@ -19,8 +19,9 @@ from uuid import uuid4
 from datetime import datetime
 import itertools
 import json
+import subprocess
 
-from emtools.utils import Process
+from emtools.utils import Process, Color
 
 
 class Args(dict):
@@ -61,7 +62,9 @@ class Batch(dict):
         return os.path.join(self['path'], *p)
 
     def mkdir(self, *p):
-        return os.mkdir(self.join(*p))
+        d = self.join(*p)
+        os.mkdir(d)
+        return d
 
     def exists(self, *p):
         return os.path.exists(self.join(*p))
@@ -69,6 +72,11 @@ class Batch(dict):
     def dump_info(self):
         with open(self.join('info.json'), 'w') as batch_info:
             json.dump(self.info, batch_info, indent=4)
+
+    def call(self, args, logfile):
+        with open(logfile, 'w') as f:
+            print(">>>", Color.green(args[0]), Color.bold(' '.join(args[1:])))
+            subprocess.call(args, cwd=self.path, stderr=f, stdout=f)
 
 
 class BatchManager:
