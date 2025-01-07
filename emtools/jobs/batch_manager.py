@@ -28,7 +28,12 @@ class Args(dict):
     """ Subclass from dict with some utilities related to arguments. """
 
     def toList(self):
-        return list(itertools.chain.from_iterable([str(k), str(v)] for k, v in self.items()))
+        args = []
+        for k, v in self.items():
+            args.append(str(k))
+            if v:
+                args.append((str(v)))
+        return args
 
     def toLine(self):
         return ' '.join("%s %s" % (k, v) for k, v in self.items())
@@ -61,6 +66,9 @@ class Batch(dict):
     def join(self, *p):
         return os.path.join(self['path'], *p)
 
+    def relpath(self, p):
+        return os.path.relpath(p, self.path)
+
     def mkdir(self, *p):
         d = self.join(*p)
         os.mkdir(d)
@@ -73,7 +81,8 @@ class Batch(dict):
         with open(self.join('info.json'), 'w') as batch_info:
             json.dump(self.info, batch_info, indent=4)
 
-    def call(self, args, logfile):
+    def call(self, program, kwargs, logfile):
+        args = [program] + Args(kwargs).toList()
         with open(logfile, 'w') as f:
             print(">>>", Color.green(args[0]), Color.bold(' '.join(args[1:])))
             subprocess.call(args, cwd=self.path, stderr=f, stdout=f)
