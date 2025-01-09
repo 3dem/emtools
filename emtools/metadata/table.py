@@ -143,6 +143,12 @@ class Table(ColumnList):
         self.Row = self.createRowClass()
         self._rows = []
 
+    @staticmethod
+    def fromDict(valuesDict):
+        t = Table(list(valuesDict.keys()))
+        t.addRowValues(**valuesDict)
+        return t
+
     def clear(self):
         self.Row = None
         self._columns.clear()

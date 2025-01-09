@@ -31,7 +31,7 @@ class Args(dict):
         args = []
         for k, v in self.items():
             args.append(str(k))
-            if v:
+            if v != '':
                 args.append((str(v)))
         return args
 
@@ -84,7 +84,9 @@ class Batch(dict):
     def call(self, program, kwargs, logfile):
         args = [program] + Args(kwargs).toList()
         with open(logfile, 'w') as f:
-            print(">>>", Color.green(args[0]), Color.bold(' '.join(args[1:])))
+            cmd = f">>> {Color.green(args[0])} {Color.bold(' '.join(args[1:]))}"
+            print(cmd)
+            f.write(f"\n{cmd}\n")
             subprocess.call(args, cwd=self.path, stderr=f, stdout=f)
 
 
