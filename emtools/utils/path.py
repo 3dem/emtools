@@ -189,7 +189,7 @@ class Path:
         if kwargs.get('clean', globalClean):
             shutil.rmtree(tmp)
         else:
-            print(f"Temporary directy was not deleted, "
+            print(f"Temporary directory was not deleted, "
                   f"remove it with the following command: \n"
                   f"{Color.bold('rm -rf %s' % tmp)}")
 

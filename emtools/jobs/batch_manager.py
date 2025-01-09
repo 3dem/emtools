@@ -87,6 +87,7 @@ class Batch(dict):
             cmd = f">>> {Color.green(args[0])} {Color.bold(' '.join(args[1:]))}"
             print(cmd)
             f.write(f"\n{cmd}\n")
+            f.flush()
             subprocess.call(args, cwd=self.path, stderr=f, stdout=f)
 
 
