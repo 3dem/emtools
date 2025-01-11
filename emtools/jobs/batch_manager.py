@@ -21,7 +21,7 @@ import itertools
 import json
 import subprocess
 
-from emtools.utils import Process, Color
+from emtools.utils import Process, Color, FolderManager
 
 
 class Args(dict):
@@ -39,15 +39,15 @@ class Args(dict):
         return ' '.join("%s %s" % (k, v) for k, v in self.items())
 
 
-class Batch(dict):
+class Batch(dict, FolderManager):
     """ Subclass from dict with some utilities related to Batch logic. """
+    def __init__(self, *args, **kwargs):
+        dict.__init__(self, *args, **kwargs)
+        FolderManager.__init__(self, self['path'])
+
     @property
     def id(self):
         return self['id']
-
-    @property
-    def path(self):
-        return self['path']
 
     @property
     def index(self):
@@ -63,22 +63,9 @@ class Batch(dict):
             self['info'] = {}
         return self['info']
 
-    def join(self, *p):
-        return os.path.join(self['path'], *p)
-
-    def relpath(self, p):
-        return os.path.relpath(p, self.path)
-
-    def mkdir(self, *p):
-        d = self.join(*p)
-        os.mkdir(d)
-        return d
-
-    def exists(self, *p):
-        return os.path.exists(self.join(*p))
-
-    def dump_info(self):
-        with open(self.join('info.json'), 'w') as batch_info:
+    def dump_info(self, infoFile=None):
+        infoFile = infoFile or self.join('info.json')
+        with open(infoFile, 'w') as batch_info:
             json.dump(self.info, batch_info, indent=4)
 
     def call(self, program, kwargs, logfile):

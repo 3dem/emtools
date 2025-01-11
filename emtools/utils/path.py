@@ -228,3 +228,26 @@ class Path:
         """
         return path and os.path.exists(path)
 
+
+class FolderManager:
+    """ Helper class with some path utilities from a given path. """
+    def __init__(self, path):
+        self.__path = path
+
+    def join(self, *p):
+        return os.path.join(self.__path, *p)
+
+    def relpath(self, p):
+        return os.path.relpath(p, self.path)
+
+    def mkdir(self, *p):
+        d = self.join(*p)
+        os.mkdir(d)
+        return d
+
+    def exists(self, *p):
+        return os.path.exists(self.join(*p))
+
+    @property
+    def path(self):
+        return self['path']
