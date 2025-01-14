@@ -30,7 +30,7 @@ from collections import OrderedDict
 from datetime import datetime, timedelta
 
 import emtools
-from emtools.utils import Pretty
+from emtools.utils import Pretty, Color
 from .table import ColumnList, Table
 
 
@@ -130,6 +130,14 @@ class StarFile(AbstractContextManager):
                 self._table.addRow(self.__rowFromValues(self.__split_line(line)))
 
         return self._table
+
+    @staticmethod
+    def getTableFromFile(starFileName, tableName, **kwargs):
+        """ Shortcut to read a table from file.
+        **kwargs are the same expected by getTable function.
+        """
+        with StarFile(starFileName) as sf:
+            return sf.getTable(tableName, **kwargs)
 
     def getTableSize(self, tableName):
         """
@@ -423,11 +431,10 @@ class StarMonitor:
         self.fileName = fileName
         self._tableName = tableName
         self._rowKeyFunc = rowKeyFunc
-        self._wait = kwargs.get('wait', 10)
+        self._wait = kwargs.get('wait', 30)
         self._timeout = timedelta(seconds=kwargs.get('timeout', 300))
         self.lastCheck = None  # Last timestamp when input was checked
         self.lastUpdate = None  # Last timestamp when new items were found
-        self.inputCount = 0  # Count all input elements
 
         # Black list some items to not be monitored again
         # We are not interested in the items but just skip them from
@@ -447,7 +454,6 @@ class StarMonitor:
                 for row in sf.iterTable(self._tableName):
                     rowKey = self._rowKeyFunc(row)
                     if rowKey not in self._seenItems:
-                        self.inputCount += 1
                         self._seenItems.add(rowKey)
                         newRows.append(row)
 
@@ -462,7 +468,7 @@ class StarMonitor:
         if self.lastCheck is None or self.lastUpdate is None:
             return False
         else:
-            return self.lastCheck - self.lastUpdate > self._timeout
+            return (self.lastCheck - self.lastUpdate) > self._timeout
 
     def newItems(self, sleep=10):
         """ Yield new items since last update until the stream is closed. """
