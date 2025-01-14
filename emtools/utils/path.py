@@ -242,7 +242,8 @@ class FolderManager:
 
     def mkdir(self, *p):
         d = self.join(*p)
-        os.mkdir(d)
+        if not os.path.exists(d):
+            os.mkdir(d)
         return d
 
     def exists(self, *p):
