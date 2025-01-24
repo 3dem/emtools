@@ -63,10 +63,13 @@ class Batch(dict, FolderManager):
             self['info'] = {}
         return self['info']
 
-    def dump_info(self, infoFile=None):
-        infoFile = infoFile or self.join('info.json')
-        with open(infoFile, 'w') as batch_info:
-            json.dump(self.info, batch_info, indent=4)
+    def dump(self, obj, fn):
+        filePath = self.join(fn)
+        with open(filePath, 'w') as f:
+            json.dump(obj, f, indent=4)
+
+    def dump_info(self):
+        self.dump(self.info, 'info.json')
 
     def call(self, program, kwargs, logfile):
         args = [program] + Args(kwargs).toList()
