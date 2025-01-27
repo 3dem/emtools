@@ -21,7 +21,7 @@ import itertools
 import json
 import subprocess
 
-from emtools.utils import Process, Color, FolderManager
+from emtools.utils import Process, Color, FolderManager, Pretty
 
 
 class Args(dict):
@@ -54,10 +54,6 @@ class Batch(dict, FolderManager):
         return self['index']
 
     @property
-    def items(self):
-        return self['items']
-
-    @property
     def info(self):
         if 'info' not in self:
             self['info'] = {}
@@ -71,11 +67,28 @@ class Batch(dict, FolderManager):
     def dump_info(self):
         self.dump(self.info, 'info.json')
 
-    def call(self, program, kwargs, logfile):
-        args = [program] + Args(kwargs).toList()
-        with open(logfile, 'w') as f:
-            cmd = f">>> {Color.green(args[0])} {Color.bold(' '.join(args[1:]))}"
-            print(cmd)
+    def dump_all(self):
+        self.dump(self, 'batch.json')
+
+    def load_all(self):
+        with open(self.join('batch.json')) as f:
+            self.update(json.load(f))
+
+    def call(self, program, kwargs, logfile=None, verbose=False):
+        if isinstance(kwargs, dict):
+            args = Args(kwargs).toList()
+        elif isinstance(kwargs, list):
+            args = list(kwargs)
+        else:
+            raise Exception("Expecting dict or list as arguments")
+
+        args.insert(0, program)
+        logfile = logfile or self.join('batch.log')
+
+        with open(logfile, 'a') as f:
+            cmd = f"{Pretty.now()}: >>> {Color.green(args[0])} {Color.bold(' '.join(args[1:]))}"
+            if verbose:
+                print(cmd)
             f.write(f"\n{cmd}\n")
             f.flush()
             subprocess.call(args, cwd=self.path, stderr=f, stdout=f)
