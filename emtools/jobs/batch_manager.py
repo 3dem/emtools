@@ -74,7 +74,10 @@ class Batch(dict, FolderManager):
         with open(self.join('batch.json')) as f:
             self.update(json.load(f))
 
-    def call(self, program, kwargs, logfile=None, verbose=False):
+    def call(self, program, kwargs, logfile=None, verbose=False, cwd=True):
+        """
+        If cwd is True, call the program from the batch directory.
+        """
         if isinstance(kwargs, dict):
             args = Args(kwargs).toList()
         elif isinstance(kwargs, list):
@@ -91,7 +94,10 @@ class Batch(dict, FolderManager):
                 print(cmd)
             f.write(f"\n{cmd}\n")
             f.flush()
-            subprocess.call(args, cwd=self.path, stderr=f, stdout=f)
+            kwargs = {'stderr': f, 'stdout': f}
+            if cwd:
+                kwargs['cwd'] = self.path
+            subprocess.call(args, **kwargs)
 
 
 class BatchManager:

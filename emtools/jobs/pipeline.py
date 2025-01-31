@@ -64,35 +64,36 @@ class TaskQueue:
     """ Queue of tasks where producers can deposit tasks and
     consumers can get it.
     """
-    def __init__(self):
+    def __init__(self, maxsize=None):
         self._activeGenerators = 0
-        self._condition = threading.Condition()
         self._tasks = []
+        self._maxsize = maxsize
+        self._lock = threading.Lock()  # Lock to access tasks
+        self._condEmpty = threading.Condition(self._lock)
+        self._condFull = threading.Condition(self._lock)
 
     def getTask(self, proc):
         """ This function should be called from a consumer of this
         output instance.
         """
-        self._condition.acquire()
+        with self._lock:
+            proc._print("Inside condition lock, queue._activeGenerators: ",
+                        self._activeGenerators)
+            doWait = True
+            task = None
 
-        proc._print("Inside condition lock, queue._activeGenerators: ",
-                    self._activeGenerators)
-        doWait = True
-        task = None
-
-        while doWait:
-            doWait = False
-            if self._tasks:
-                proc._print("There are tasks")
-                task = self._tasks.pop(0)
-            elif self._activeGenerators > 0:
-                proc._print("No tasks, but not Done, waiting...")
-                self._condition.wait()
-                doWait = True
-            else:
-                proc._print("No tasks and done, should return None task.")
-
-        self._condition.release()
+            while doWait:
+                doWait = False
+                if self._tasks:
+                    proc._print("There are tasks")
+                    task = self._tasks.pop(0)
+                    self._condFull.notify()
+                elif self._activeGenerators > 0:
+                    proc._print("No tasks, but not Done, waiting...")
+                    self._condEmpty.wait()
+                    doWait = True
+                else:
+                    proc._print("No tasks and done, should return None task.")
 
         # Return the task, either None if nothing else should be
         # done, or a task to be processed
@@ -102,44 +103,47 @@ class TaskQueue:
         """ This function should be used by subclasses of Output
         that produces items that will be used by consumers.
         """
-        self._condition.acquire()
-        self._tasks.append(task)
-        self._condition.notify()
-        self._condition.release()
+        with self._lock:
+            if self._maxsize and len(self._tasks) == self._maxsize:
+                self._condFull.wait()
+            self._tasks.append(task)
+            self._condEmpty.notify()
 
     def notifyGeneratorStarts(self):
         """ When this queue is associated to a generator, this method should be
         used to notify that the generator has started to run.
         """
-        self._condition.acquire()
-        self._activeGenerators += 1
-        self._condition.release()
+        with self._lock:
+            self._activeGenerators += 1
 
     def notifyGeneratorEnds(self):
         """ This function should be used by generators associated to this queue
         to notify that they are done and not more tasks will be produced.
         """
-        self._condition.acquire()
-        self._activeGenerators -= 1
-        if self._activeGenerators == 0:
-            self._condition.notifyAll()
-        self._condition.release()
+        with self._lock:
+            self._activeGenerators -= 1
+            if self._activeGenerators == 0:
+                self._condEmpty.notifyAll()
 
     def isDone(self):
-        self._condition.acquire()
-        is_done = self._activeGenerators == 0
-        self._condition.release()
+        with self._lock:
+            is_done = self._activeGenerators == 0
+
         return is_done
 
 
 class TaskGenerator(threading.Thread):
     def __init__(self, generator, outputQueue=None,
-                 name='', debug=False):
+                 name='', debug=False, queueMaxSize=None):
         """
         Params:
             generator: function generating new tasks
             outputQueue: queue to put new tasks.
                 If None, a new queue will be created
+            queueMaxSize: maximum number of task that can be in
+                output queue. After that, a call to putTask block
+                the generator. If outputQueue is not None, this
+                parameter is ignored.
         """
         threading.Thread.__init__(self)
         self.id = None
@@ -148,7 +152,7 @@ class TaskGenerator(threading.Thread):
         self._generator = generator
 
         if outputQueue is None:
-            self.outputQueue = TaskQueue()
+            self.outputQueue = TaskQueue(maxsize=queueMaxSize)
         else:
             self.outputQueue = outputQueue
 
