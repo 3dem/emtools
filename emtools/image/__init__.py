@@ -1,8 +1,6 @@
 # **************************************************************************
 # *
-# * Authors:     J.M. De la Rosa Trevin (delarosatrevin@scilifelab.se) [1]
-# *
-# * [1] SciLifeLab, Stockholm University
+# * Authors:     J.M. de la Rosa Trevin (delarosatrevin@gmail.com)
 # *
 # * This program is free software; you can redistribute it and/or modify
 # * it under the terms of the GNU General Public License as published by
@@ -14,18 +12,10 @@
 # * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # * GNU General Public License for more details.
 # *
-# * You should have received a copy of the GNU General Public License
-# * along with this program; if not, write to the Free Software
-# * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
-# * 02111-1307  USA
-# *
-# *  All comments concerning this program package may be sent to the
-# *  e-mail address 'delarosatrevin@scilifelab.se'
-# *
 # **************************************************************************
 
 
-from .thumbnail import Thumbnail
+from .thumbnail import Thumbnail, Image
 
 
-__all__ = [Thumbnail]
+__all__ = ["Thumbnail", "Image"]

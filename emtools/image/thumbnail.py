@@ -1,8 +1,6 @@
 # **************************************************************************
 # *
-# * Authors:     J.M. De la Rosa Trevin (delarosatrevin@scilifelab.se) [1]
-# *
-# * [1] SciLifeLab, Stockholm University
+# * Authors:     J.M. de la Rosa Trevin (delarosatrevin@gmail.com)
 # *
 # * This program is free software; you can redistribute it and/or modify
 # * it under the terms of the GNU General Public License as published by
@@ -14,22 +12,15 @@
 # * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # * GNU General Public License for more details.
 # *
-# * You should have received a copy of the GNU General Public License
-# * along with this program; if not, write to the Free Software
-# * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
-# * 02111-1307  USA
-# *
-# *  All comments concerning this program package may be sent to the
-# *  e-mail address 'delarosatrevin@scilifelab.se'
-# *
 # **************************************************************************
 
 import io
 import numpy as np
 import base64
 import mrcfile
+import tifffile
 
-from PIL import Image, ImageOps, ImageFilter
+import PIL
 
 
 class Thumbnail:
@@ -79,10 +70,10 @@ class Thumbnail:
         self.scale = scale
 
         if self.contrast_factor is not None:
-            pil_img = ImageOps.autocontrast(pil_img, cutoff=self.contrast_factor)
+            pil_img = PIL.ImageOps.autocontrast(pil_img, cutoff=self.contrast_factor)
 
         if self.gaussian_radius is not None:
-            pil_img = pil_img.filter(ImageFilter.GaussianBlur(radius=self.gaussian_radius))
+            pil_img = pil_img.filter(PIL.ImageFilter.GaussianBlur(radius=self.gaussian_radius))
 
         return self.__format(pil_img)
 
@@ -90,7 +81,7 @@ class Thumbnail:
         """ Read the image path as a PIL image and encode it as base64.
         """
         try:
-            img = Image.open(path)
+            img = PIL.Image.open(path)
             encoded = self.from_pil(img)
             img.close()
         except:
@@ -121,7 +112,7 @@ class Thumbnail:
 
         im255 = ((array - iMin) / (iMax - iMin) * 255).astype(np.uint8)
 
-        pil_img = Image.fromarray(im255)
+        pil_img = PIL.Image.fromarray(im255)
 
         return self.from_pil(pil_img)
 
@@ -168,3 +159,18 @@ class Thumbnail:
         defaults.update(kwargs)
         return Thumbnail(**defaults)
 
+
+class Image:
+    @staticmethod
+    def get_dimensions(imagePath):
+        imageLower = imagePath.lower()
+        if imageLower.endswith('.mrc') or imageLower.endswith('.mrcs'):
+            with mrcfile.open(imagePath) as mrc:
+                return mrc.data.shape[::-1]  # in reverse order
+        elif (imageLower.endswith('.tif') or
+              imageLower.endswith('.tiff') or
+              imageLower.endswith('.eer')):
+            with tifffile.TiffFile(imagePath) as tif:
+                n = len(tif.pages)
+                y, x = tif.pages[0].shape
+                return (x, y, n) if n > 1 else (x, y)
