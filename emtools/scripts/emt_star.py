@@ -38,6 +38,7 @@ def printStarInfo(starFile):
                   f"\n    - Columns: {Color.cyan(len(cols))} [{' '.join(c for c in cols)}]"
                   f"\n    -    Rows: {Color.cyan(tSize)}")
 
+
 def groupBy(starFile, table, column):
     group = defaultdict(lambda: 0)
 
@@ -49,6 +50,45 @@ def groupBy(starFile, table, column):
         print(k, v)
 
 
+def splitBy(starFile, column, minSize):
+    with StarFile(starFile) as sf:
+        tOptics = sf.getTable('optics')
+        tParticles = sf.getTableInfo('particles')
+        rows = []
+        count = 0
+        map = {}
+
+        def _writeStar(minSize=0):
+            nonlocal count
+            nonlocal rows
+
+            if len(rows) <= minSize:
+                return
+
+            count += 1
+            outStarFile = Path.replaceExt(starFile, f'_{count:03}.star')
+            with StarFile(outStarFile, 'w') as sfOut:
+                sfOut.writeTimeStamp()
+                sfOut.writeTable('optics', tOptics)
+                sfOut.writeHeader('particles', tParticles)
+                for row in rows:
+                    sfOut.writeRow(row)
+            rows = []
+
+        lastValue = None
+        lastIndex = 0
+
+        for row in sf.iterTable('particles'):
+            value = getattr(row, column)
+            if lastValue is not None and lastValue != value:
+                _writeStar(int(minSize))
+            rows.append(row)
+            lastValue = value
+
+        if rows:
+            _writeStar(0)  # Write all remaining
+
+
 def main():
     p = argparse.ArgumentParser(prog='emt-star')
     p.add_argument('input',
@@ -56,16 +96,22 @@ def main():
     p.add_argument('--group_by', '-g', nargs=2,
                    metavar=('TABLE', 'COLUMN'),
                    help="Count rows grouped by a given label")
+    p.add_argument('--split_particles', '-s', nargs='+', metavar=('COLUMN', 'minsize'),
+                   help="Split input particles by some column")
 
     args = p.parse_args()
+    inputStar = args.input
 
     if args.group_by:
         table, column = args.group_by
-        groupBy(args.input, table, column)
+        groupBy(inputStar, table, column)
+    elif split := args.split_particles:
+        column = split[0]
+        minSize = split[1] if len(split) > 1 else 0
+        splitBy(inputStar, column, minSize)
     else:
         printStarInfo(args.input)
 
 
 if __name__ == '__main__':
     main()
-
