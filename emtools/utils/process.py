@@ -23,6 +23,10 @@ import subprocess
 import logging
 
 
+def _print(*msgs):
+    print(*msgs)
+
+
 class Process:
     def __init__(self, *args, **kwargs):
         """ Create a process using subprocess."""
@@ -57,7 +61,7 @@ class Process:
             print(self.stdout)
 
     @staticmethod
-    def system(cmd, only_print=False, color=None, do_print=True):
+    def system(cmd, only_print=False, color=None, print=_print):
         """ Execute and print a command.
 
         Args:
@@ -66,7 +70,7 @@ class Process:
                 not executed
             color: Optional color for the command
         """
-        if do_print:
+        if print:
             printCmd = cmd if color is None else color(cmd)
             print(printCmd)
         if not only_print:
