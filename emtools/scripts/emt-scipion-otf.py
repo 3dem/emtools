@@ -827,12 +827,13 @@ def cryosparc_prepare():
                 coordsFn = f'Coordinates/{micName}_DW_coordinates.star'
                 ctfValues = [getattr(row, k) for k in ctfCols]
                 print(len(ctfValues))
-                with StarFile(coordsFn) as sfCoords:
-                    for rowCoord in sfCoords.iterTable(''):
-                        sfOut.writeRow(t.Row(f'{micName}.mrc',
-                                             rowCoord.rlnCoordinateX,
-                                             rowCoord.rlnCoordinateY,
-                                             *ctfValues))
+                if os.path.exists(coordsFn):
+                    with StarFile(coordsFn) as sfCoords:
+                        for rowCoord in sfCoords.iterTable(''):
+                            sfOut.writeRow(t.Row(f'{micName}.mrc',
+                                                 rowCoord.rlnCoordinateX,
+                                                 rowCoord.rlnCoordinateY,
+                                                 *ctfValues))
 
 
 def cryosparc_import(projId, dataRoot):
