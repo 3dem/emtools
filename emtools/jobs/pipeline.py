@@ -99,7 +99,7 @@ class TaskQueue:
         # done, or a task to be processed
         return task
 
-    def putTask(self, task):
+    def putTask(self, task, proc):
         """ This function should be used by subclasses of Output
         that produces items that will be used by consumers.
         """
@@ -160,8 +160,11 @@ class TaskGenerator(threading.Thread):
         self.outputQueue.notifyGeneratorStarts()
         self.id = threading.get_ident()
 
+        self._print(">>>>>> Iterating generator tasks")
         for task in self._generator():
-            self.outputQueue.putTask(task)
+            self._print(">>>>>>>> Got task: ", task['id'], "...putting it queue.")
+            self.outputQueue.putTask(task, self)
+            self._print(">>>>>>>> SENT task: ", task['id'])
 
         self.outputQueue.notifyGeneratorEnds()
 
@@ -173,8 +176,10 @@ class TaskGenerator(threading.Thread):
 
 class TaskProcessor(TaskGenerator):
     def __init__(self, inputQueue, processor, outputQueue=None,
-                 name='', debug=False):
-        TaskGenerator.__init__(self, self._process, outputQueue, name, debug)
+                 name='', debug=False, queueMaxSize=None):
+        TaskGenerator.__init__(self, self._process,
+                               outputQueue=outputQueue, name=name,
+                               debug=debug, queueMaxSize=queueMaxSize)
         self._processor = processor
         self._inputQueue = inputQueue
 
