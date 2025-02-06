@@ -89,15 +89,24 @@ class Batch(dict, FolderManager):
         logfile = logfile or self.join('batch.log')
 
         with open(logfile, 'a') as f:
-            cmd = f"{Pretty.now()}: >>> {Color.green(args[0])} {Color.bold(' '.join(args[1:]))}"
-            if verbose:
-                print(cmd)
+            cmd = self.log(f"{Color.green(args[0])} {Color.bold(' '.join(args[1:]))}")
             f.write(f"\n{cmd}\n")
             f.flush()
             kwargs = {'stderr': f, 'stdout': f}
             if cwd:
                 kwargs['cwd'] = self.path
             subprocess.call(args, **kwargs)
+
+    def log(self, msg):
+        logMsg = f"{Pretty.now()}: {self.id}: {msg}"
+        print(logMsg)
+        return logMsg
+
+    def create(self):
+        """ Create batch folder. """
+        self.log(f"Creating folder: {self.path}")
+        Process.system(f"rm -rf '{self.path}'", print=False)
+        Process.system(f"mkdir '{self.path}'", print=False)
 
 
 class BatchManager:
@@ -127,18 +136,22 @@ class BatchManager:
     def _createBatchId(self):
         # We will use batchCount, before the batch is created
         nowPrefix = datetime.now().strftime('%y%m%d-%H%M%S')
-        countStr = '%02d' % (self._batchCount + 1)
+        countStr = '%02d' % self._batchCount
         uuidSuffix = str(uuid4()).split('-')[0]
         return f"{nowPrefix}_{countStr}_{uuidSuffix}"
 
     def _createBatch(self, items, inputFolder=None):
+        self._batchCount += 1
         batch_id = self._createBatchId()
         batch_path = os.path.join(self._workingPath, batch_id)
-        print(f"Creating batch: {batch_path}")
-        Process.system(f"rm -rf '{batch_path}'")
-        Process.system(f"mkdir '{batch_path}'")
+        batch = Batch(id=batch_id,
+                      index=self._batchCount,
+                      path=batch_path,
+                      items=items)
+        batch.create()
+
         if inputFolder is not None:
-            Process.system(f"mkdir '{batch_path}/{inputFolder}'")
+            batch.mkdir(inputFolder)
 
         for item in items:
             fn = self._itemFileNameFunc(item)
@@ -148,13 +161,7 @@ class BatchManager:
             os.symlink(os.path.abspath(fn),
                        os.path.join(batch_path, baseName))
 
-        self._batchCount += 1
-        return Batch({
-            'items': items,
-            'id': batch_id,
-            'path': batch_path,
-            'index': self._batchCount
-        })
+        return batch
 
     def generate(self):
         """ Generate batches based on the input items. """
