@@ -15,7 +15,7 @@
 # **************************************************************************
 
 import os
-
+import pathlib
 from datetime import datetime, timedelta
 
 from emtools.utils import Path, Pretty, Process
@@ -274,9 +274,20 @@ class Mdoc(dict):
 
         return mdoc
 
+    @staticmethod
+    def getSubFrameBase(section):
+        """ Helper method to extract the subframe base filename. """
+        subFramePath = section.get('SubFramePath', '')
+        return pathlib.PureWindowsPath(subFramePath).parts[-1]
+
     @property
     def zvalues(self):
-        return [(k, v) for k, v in self.items() if k.startswith('ZValue')]
+        return [(k, v) for k, v in self.zsections()]
+
+    def zsections(self):
+        for k, v in self.items():
+            if k.startswith('ZValue'):
+                yield k, v
 
     def write(self, path):
         with open(path, 'w') as f:
