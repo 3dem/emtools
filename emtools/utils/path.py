@@ -251,4 +251,9 @@ class FolderManager:
 
     @property
     def path(self):
-        return self['path']
+        return self.__path
+
+    def create(self, **kwargs):
+        """ Create batch folder. """
+        Process.system(f"rm -rf '{self.path}'", **kwargs)
+        Process.system(f"mkdir -p '{self.path}'", **kwargs)
