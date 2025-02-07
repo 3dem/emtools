@@ -105,8 +105,7 @@ class Batch(dict, FolderManager):
     def create(self):
         """ Create batch folder. """
         self.log(f"Creating folder: {self.path}")
-        Process.system(f"rm -rf '{self.path}'", print=False)
-        Process.system(f"mkdir '{self.path}'", print=False)
+        FolderManager.create(self, print=False)
 
 
 class BatchManager:
