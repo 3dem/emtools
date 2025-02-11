@@ -14,8 +14,29 @@
 # *
 # **************************************************************************
 
-from .pipeline import Pipeline
-from .batch_manager import Args, Batch, BatchManager
-from .workflow import Workflow
+import unittest
+import numpy as np
+import time
 
-__all__ = ["Pipeline", "BatchManager", "Batch", "Args", "Workflow"]
+
+from emtools.utils import Color
+from emtools.jobs import Pipeline, Workflow
+
+
+class TestWorkflow(unittest.TestCase):
+    def test_basic(self):
+        wf = Workflow()
+
+        j1 = wf.registerJob('job01')
+        d1 = j1.registerOutput('d1')
+        j2 = wf.registerJob('job02', inputs=[d1])
+        j3 = wf.registerJob('job03', inputs=[d1])
+        d3a = j3.registerOutput('d3a')
+        d3b = j3.registerOutput('d3b')
+        j5 = wf.registerJob('job05')
+        d5 = j5.registerOutput('d5')
+        j6 = wf.registerJob('job06', inputs=[d3b, d5])
+
+        wf.print()
+
+
