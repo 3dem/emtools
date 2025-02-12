@@ -37,6 +37,12 @@ class TestWorkflow(unittest.TestCase):
         d5 = j5.registerOutput('d5')
         j6 = wf.registerJob('job06', inputs=[d3b, d5])
 
-        wf.print()
+        dot = wf.dot()
 
+    def test_relion_pipeline(self):
+        pipelineStar = '/Users/jdela80/work/data/emwrap/testing/Relion5-Tutorial-emwrap/default_pipeline.star'
 
+        wf = Workflow.fromRelionPipeline(pipelineStar)
+
+        print("\n")
+        print(wf.dot())

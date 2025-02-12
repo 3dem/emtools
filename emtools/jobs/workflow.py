@@ -20,6 +20,7 @@ from collections import OrderedDict
 import threading
 
 from emtools.utils import Process
+from emtools.metadata import StarFile
 
 
 class Workflow:
@@ -46,13 +47,17 @@ class Workflow:
     def getJob(self, jobId):
         return self._jobs[jobId]
 
-    def registerJob(self, jobId, inputs=[]):
-        job = Workflow.Job(self, jobId, self._jobCounter + 1, inputs=inputs)
+    def getData(self, dataId):
+        return self.data[dataId]
+
+    def registerJob(self, jobId, inputs=[], **kwargs):
+        job = Workflow.Job(self, jobId, self._jobCounter + 1,
+                           inputs=inputs, **kwargs)
         self._jobCounter += 1
         self._jobs[jobId] = job
         return job
 
-    def print(self):
+    def dot(self):
         """ Print the workflow to the terminal. """
         dot = 'digraph G {\n   compound=true;\n'
         links = ''
@@ -64,13 +69,14 @@ class Workflow:
                     f'        i{j.index} [color=lightgrey,fontcolor=lightgrey];\n'
                     f'        label="{j.id}";\n')
             for o in j.outputs:
-                dot += f'        {o.id}\n'
+                oid = o.id.replace('/', '_').replace('.', '_')
+                dot += f'        {oid}\n'
                 for c in o.childs:
-                    links += f'{o.id} -> i{c.index} [lhead=cluster_{c.index}];\n'
+                    links += f'{oid} -> i{c.index} [lhead=cluster_{c.index}];\n'
             dot += '    }\n'
 
         dot += f'\n{links}\n}}\n'
-        print(dot)
+        return dot
 
     class Job(dict):
         def __init__(self, wf, id, index, inputs=[], **kwargs):
@@ -88,11 +94,17 @@ class Workflow:
             self.outputs.append(data)
             return data
 
-        def addInputs(self, inputs):
-            if any(i in self.inputs for i in inputs):
-                raise Exception(f'Input {i} was already added.')
+        def _validateInputs(self, inputs):
+            for i in inputs:
+                if not isinstance(i, Workflow.Data):
+                    raise Exception(f"Input {i} is not of type Workflow.Data")
+                if i in self.inputs:
+                    Exception(f'Input {i} was already added.')
+                # TODO validate cyclic dependencies
 
-            # TODO validate cyclic dependencies
+        def addInputs(self, inputs):
+            self._validateInputs(inputs)
+
             for i in inputs:
                 self.inputs.append(i)
                 i.childs.append(self)
@@ -103,4 +115,30 @@ class Workflow:
             self.id = dataId
             self.parent = parent
             self.childs = []
+
+    @staticmethod
+    def fromRelionPipeline(pipelineStar):
+        """ Load pipeline Graph from the default_pipeline.star file. """
+        wf = Workflow()
+
+        with StarFile(pipelineStar) as sf:
+            for row in sf.iterTable('pipeline_processes'):
+                wf.registerJob(row.rlnPipeLineProcessName,
+                               alias=row.rlnPipeLineProcessAlias,
+                               status=row.rlnPipeLineProcessStatusLabel,
+                               type=row.rlnPipeLineProcessTypeLabel)
+
+            nodes = {row.rlnPipeLineNodeName: {'type': row.rlnPipeLineNodeTypeLabel}
+                     for row in sf.iterTable('pipeline_nodes')}
+
+            for row in sf.iterTable('pipeline_output_edges'):
+                job = wf.getJob(row.rlnPipeLineEdgeProcess)
+                nodeName = row.rlnPipeLineEdgeToNode
+                job.registerOutput(nodeName) #, type=nodes[nodeName])
+
+            for row in sf.iterTable('pipeline_input_edges'):
+                job = wf.getJob(row.rlnPipeLineEdgeProcess)
+                job.addInputs([wf.getData(row.rlnPipeLineEdgeFromNode)])
+
+        return wf
 
