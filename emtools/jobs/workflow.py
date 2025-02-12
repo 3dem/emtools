@@ -29,10 +29,10 @@ class Workflow:
     produced Data. The workflow is represented as a directed acyclic graph.
     """
 
-    def __init__(self, jobCounter=0):
+    def __init__(self, **kwargs):
         self._jobs = {}
         self.data = {}
-        self._jobCounter = jobCounter
+        self.jobNextIndex = 1
 
     def jobs(self):
         """ Iterate over the jobs sorted by index. """
@@ -50,10 +50,10 @@ class Workflow:
     def getData(self, dataId):
         return self.data[dataId]
 
-    def registerJob(self, jobId, inputs=[], **kwargs):
-        job = Workflow.Job(self, jobId, self._jobCounter + 1,
+    def registerJob(self, jobId, inputs=None, **kwargs):
+        job = Workflow.Job(self, jobId, self.jobNextIndex,
                            inputs=inputs, **kwargs)
-        self._jobCounter += 1
+        self.jobNextIndex += 1
         self._jobs[jobId] = job
         return job
 
@@ -79,10 +79,10 @@ class Workflow:
         return dot
 
     class Job(dict):
-        def __init__(self, wf, id, index, inputs=[], **kwargs):
+        def __init__(self, wf, jobId, index, inputs=None, **kwargs):
             dict.__init__(self, **kwargs)
             self.wf = wf
-            self.id = id
+            self.id = jobId
             self.index = index
             self.inputs = []
             self.outputs = []
@@ -103,6 +103,9 @@ class Workflow:
                 # TODO validate cyclic dependencies
 
         def addInputs(self, inputs):
+            if not inputs:
+                return
+
             self._validateInputs(inputs)
 
             for i in inputs:
@@ -116,29 +119,4 @@ class Workflow:
             self.parent = parent
             self.childs = []
 
-    @staticmethod
-    def fromRelionPipeline(pipelineStar):
-        """ Load pipeline Graph from the default_pipeline.star file. """
-        wf = Workflow()
-
-        with StarFile(pipelineStar) as sf:
-            for row in sf.iterTable('pipeline_processes'):
-                wf.registerJob(row.rlnPipeLineProcessName,
-                               alias=row.rlnPipeLineProcessAlias,
-                               status=row.rlnPipeLineProcessStatusLabel,
-                               type=row.rlnPipeLineProcessTypeLabel)
-
-            nodes = {row.rlnPipeLineNodeName: {'type': row.rlnPipeLineNodeTypeLabel}
-                     for row in sf.iterTable('pipeline_nodes')}
-
-            for row in sf.iterTable('pipeline_output_edges'):
-                job = wf.getJob(row.rlnPipeLineEdgeProcess)
-                nodeName = row.rlnPipeLineEdgeToNode
-                job.registerOutput(nodeName) #, type=nodes[nodeName])
-
-            for row in sf.iterTable('pipeline_input_edges'):
-                job = wf.getJob(row.rlnPipeLineEdgeProcess)
-                job.addInputs([wf.getData(row.rlnPipeLineEdgeFromNode)])
-
-        return wf
 

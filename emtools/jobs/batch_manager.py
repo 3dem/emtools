@@ -44,6 +44,7 @@ class Batch(dict, FolderManager):
     def __init__(self, *args, **kwargs):
         dict.__init__(self, *args, **kwargs)
         FolderManager.__init__(self, self['path'])
+        self._logId = f" {self.id}:"
 
     @property
     def id(self):
@@ -96,16 +97,6 @@ class Batch(dict, FolderManager):
             if cwd:
                 kwargs['cwd'] = self.path
             subprocess.call(args, **kwargs)
-
-    def log(self, msg):
-        logMsg = f"{Pretty.now()}: {self.id}: {msg}"
-        print(logMsg)
-        return logMsg
-
-    def create(self):
-        """ Create batch folder. """
-        self.log(f"Creating folder: {self.path}")
-        FolderManager.create(self, print=False)
 
 
 class BatchManager:

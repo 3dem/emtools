@@ -233,6 +233,7 @@ class FolderManager:
     """ Helper class with some path utilities from a given path. """
     def __init__(self, path):
         self.__path = path
+        self._logId = ""
 
     def join(self, *p):
         return os.path.join(self.__path, *p)
@@ -240,10 +241,9 @@ class FolderManager:
     def relpath(self, p):
         return os.path.relpath(p, self.path)
 
-    def mkdir(self, *p):
+    def mkdir(self, *p, **kwargs):
         d = self.join(*p)
-        if not os.path.exists(d):
-            os.mkdir(d)
+        Process.system(f"mkdir -p '{d}'", **kwargs)
         return d
 
     def exists(self, *p):
@@ -255,5 +255,11 @@ class FolderManager:
 
     def create(self, **kwargs):
         """ Create batch folder. """
+        self.log(f"Creating folder: {self.path}")
         Process.system(f"rm -rf '{self.path}'", **kwargs)
         Process.system(f"mkdir -p '{self.path}'", **kwargs)
+
+    def log(self, msg):
+        logMsg = f"{Pretty.now()}:{self._logId} {msg}"
+        print(logMsg)
+        return logMsg
