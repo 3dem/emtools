@@ -51,9 +51,10 @@ class Workflow:
         return self.data[dataId]
 
     def registerJob(self, jobId, inputs=None, **kwargs):
-        job = Workflow.Job(self, jobId, self.jobNextIndex,
+        jobIndex = kwargs.get('jobindex', self.jobNextIndex)
+        job = Workflow.Job(self, jobId, jobIndex,
                            inputs=inputs, **kwargs)
-        self.jobNextIndex += 1
+        self.jobNextIndex = jobIndex + 1
         self._jobs[jobId] = job
         return job
 

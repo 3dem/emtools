@@ -83,7 +83,7 @@ class Path:
 
     @staticmethod
     def addslash(path):
-        """ Add an slash (/) to the end of the path if not present. """
+        """ Add a slash (/) to the end of the path if not present. """
         return path if path.endswith('/') else path + '/'
 
     @staticmethod
@@ -136,7 +136,6 @@ class Path:
                     f2.write(rbytes)
                     if sleep:
                         time.sleep(sleep)
-        #Process.system(f'cp {file1} {file2}')
 
     @staticmethod
     def copyDir(dir1, dir2, copyFileFunc=None, pl=None, **kwargs):
@@ -165,7 +164,6 @@ class Path:
                 _mkdir(os.path.join(root2, d))
             for f in files:
                 _copy(os.path.join(root, f), os.path.join(root2, f), **kwargs)
-
 
     @staticmethod
     @contextmanager
