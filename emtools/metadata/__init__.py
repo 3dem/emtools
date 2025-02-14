@@ -15,12 +15,13 @@
 # **************************************************************************
 
 from .table import Column, ColumnList, Table
-from .starfile import StarFile, StarMonitor
+from .starfile import StarFile, StarMonitor, RelionStar
 from .epu import EPU
-from .misc import Bins, TsBins, DataFiles, MovieFiles, Mdoc, TextFile
+from .misc import Bins, TsBins, DataFiles, MovieFiles, Mdoc, TextFile, Acquisition
 from .sqlite import SqliteFile
 
 
-__all__ = ["Column", "ColumnList", "Table", "StarFile", "StarMonitor", "EPU",
+__all__ = ["Column", "ColumnList", "Table",
+           "StarFile", "StarMonitor", "RelionStar", "EPU",
            "Bins", "TsBins", "SqliteFile", "DataFiles", "MovieFiles",
-           "Mdoc", "TextFile"]
+           "Mdoc", "TextFile", "Acquisition"]
