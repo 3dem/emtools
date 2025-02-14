@@ -17,11 +17,10 @@
 import os
 from uuid import uuid4
 from datetime import datetime
-import itertools
 import json
 import subprocess
 
-from emtools.utils import Process, Color, FolderManager, Pretty
+from emtools.utils import Color, FolderManager
 
 
 class Args(dict):

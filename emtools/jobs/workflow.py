@@ -14,14 +14,6 @@
 # *
 # **************************************************************************
 
-import os
-import sys
-from collections import OrderedDict
-import threading
-
-from emtools.utils import Process
-from emtools.metadata import StarFile
-
 
 class Workflow:
     """
@@ -94,6 +86,9 @@ class Workflow:
             self.wf.data[dataId] = data
             self.outputs.append(data)
             return data
+
+        def hasOutput(self, dataId):
+            return any(o.id == dataId for o in self.outputs)
 
         def _validateInputs(self, inputs):
             for i in inputs:

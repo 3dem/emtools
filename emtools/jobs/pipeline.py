@@ -14,12 +14,8 @@
 # *
 # **************************************************************************
 
-import os
-import sys
 from collections import OrderedDict
 import threading
-
-from emtools.utils import Process
 
 
 class Pipeline:
