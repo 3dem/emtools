@@ -20,7 +20,7 @@ from datetime import datetime
 import json
 import subprocess
 
-from emtools.utils import Color, FolderManager
+from emtools.utils import Color, FolderManager, Timer, Pretty
 
 
 class Args(dict):
@@ -44,6 +44,8 @@ class Batch(dict, FolderManager):
         dict.__init__(self, *args, **kwargs)
         FolderManager.__init__(self, self['path'])
         self._logId = f" {self.id}:"
+        self._timer = Timer()  # Create a timer to monitor batch execution
+        self._timerPrefix = ''
 
     @property
     def id(self):
@@ -58,6 +60,14 @@ class Batch(dict, FolderManager):
         if 'info' not in self:
             self['info'] = {}
         return self['info']
+
+    @property
+    def error(self):
+        return self.info.get('error', None)
+
+    @error.setter
+    def error(self, value):
+        self.info['error'] = str(value)
 
     def dump(self, obj, fn):
         filePath = self.join(fn)
@@ -96,6 +106,17 @@ class Batch(dict, FolderManager):
             if cwd:
                 kwargs['cwd'] = self.path
             subprocess.call(args, **kwargs)
+
+    def tic(self, prefix=''):
+        self._timer.tic()
+        self._timerPrefix = prefix
+
+    def toc(self):
+        self.info.update({
+            f'{self._timerPrefix}start': self._timer.getTic(),
+            f'{self._timerPrefix}end': Pretty.now(),
+            f'{self._timerPrefix}elapsed': str(self._timer.getElapsedTime())
+        })
 
 
 class BatchManager:

@@ -38,6 +38,9 @@ class Timer(object):
     def toc(self, message=None, pretty=False):
         print(self.getToc(message=message, pretty=pretty))
 
+    def getTic(self):
+        return Pretty.datetime(self._dt)
+
     def getToc(self, message=None, pretty=False):
         if message:
             self.message = message
