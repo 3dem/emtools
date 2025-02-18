@@ -17,6 +17,7 @@
 import os
 import pathlib
 from datetime import datetime, timedelta
+from glob import glob
 
 from emtools.utils import Path, Pretty, Process
 
@@ -273,6 +274,16 @@ class Mdoc(dict):
                     section[key.strip()] = value.strip()
 
         return mdoc
+
+    @staticmethod
+    def glob(mdocPattern):
+        mdocs = []
+        for mdocFn in glob(mdocPattern):
+            mdoc = Mdoc.parse(mdocFn)
+            mdoc['MdocFile'] = {'Path': mdocFn}
+            mdocs.append(mdoc)
+
+        return mdocs
 
     @staticmethod
     def getSubFrameBase(section):

@@ -30,7 +30,7 @@ from datetime import datetime, timedelta
 
 import emtools
 from emtools.utils import Pretty, Color
-from emtools.jobs import Workflow
+
 
 from .table import ColumnList, Table
 from .misc import Acquisition
@@ -606,6 +606,8 @@ class RelionStar:
     @staticmethod
     def pipeline_to_workflow(pipelineStar):
         """ Read the Relion pipeline star file and build the proper Workflow. """
+        from emtools.jobs import Workflow   # import here to avoid circular imports
+
         wf = Workflow()
         with StarFile(pipelineStar) as sf:
             tables = sf.getTableNames()
