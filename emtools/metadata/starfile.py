@@ -545,6 +545,44 @@ class RelionStar:
         return Table(['rlnMicrographName', 'rlnMicrographCoordinates'])
 
     @staticmethod
+    def tiltseries_table(mc=True, ctf=True, **kwargs):
+        cols = [
+            'rlnMicrographMovieName',
+            'rlnTomoTiltMovieFrameCount',
+            'rlnTomoNominalStageTiltAngle',
+            'rlnTomoNominalTiltAxisAngle',
+            'rlnMicrographPreExposure',
+            'rlnTomoNominalDefocus',
+            'rlnMicrographNameEven',
+            'rlnMicrographNameOdd',
+            'rlnMicrographName'
+        ]
+
+        if mc:
+            cols.extend([
+                'rlnMicrographMetadata',
+                'rlnAccumMotionTotal',
+                'rlnAccumMotionEarly',
+                'rlnAccumMotionLate'
+            ])
+
+        if ctf:
+            cols.extend([
+                'rlnCtfImage',
+                'rlnDefocusU',
+                'rlnDefocusV',
+                'rlnCtfAstigmatism',
+                'rlnDefocusAngle',
+                'rlnCtfFigureOfMerit',
+                'rlnCtfMaxResolution',
+                'rlnCtfIceRingDensity'
+            ])
+
+        cols.extend(kwargs.get('extra_cols', []))
+
+        return Table(cols)
+
+    @staticmethod
     def get_acquisition(inputTableOrFile):
         """ Load acquisition parameters from an optics table
         or a given input STAR file.
