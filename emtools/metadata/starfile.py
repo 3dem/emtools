@@ -583,6 +583,23 @@ class RelionStar:
         return Table(cols)
 
     @staticmethod
+    def global_tiltseries_table(**kwargs):
+        cols = [
+            'rlnTomoName',
+            'rlnTomoTiltSeriesStarFile',
+            'rlnVoltage',
+            'rlnSphericalAberration',
+            'rlnAmplitudeContrast',
+            'rlnMicrographOriginalPixelSize',
+            'rlnTomoHand',
+            'rlnOpticsGroupName',
+            'rlnTomoTiltSeriesPixelSize'
+        ]
+        cols.extend(kwargs.get('extra_cols', []))
+
+        return Table(cols)
+
+    @staticmethod
     def get_acquisition(inputTableOrFile):
         """ Load acquisition parameters from an optics table
         or a given input STAR file.
