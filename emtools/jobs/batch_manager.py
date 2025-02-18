@@ -19,8 +19,11 @@ from uuid import uuid4
 from datetime import datetime
 import json
 import subprocess
+import traceback
+from contextlib import contextmanager
 
-from emtools.utils import Color, FolderManager, Timer, Pretty
+from emtools.utils import Color, FolderManager, Timer, Pretty, Path
+from emtools.metadata import Mdoc
 
 
 class Args(dict):
@@ -46,6 +49,9 @@ class Batch(dict, FolderManager):
         self._logId = f" {self.id}:"
         self._timer = Timer()  # Create a timer to monitor batch execution
         self._timerPrefix = ''
+
+    def clone(self):
+        return Batch(self)
 
     @property
     def id(self):
@@ -118,6 +124,16 @@ class Batch(dict, FolderManager):
             f'{self._timerPrefix}elapsed': str(self._timer.getElapsedTime())
         })
 
+    @contextmanager
+    def execute(self):
+        try:
+            self.tic()
+            yield self
+        except Exception as e:
+            self.error = traceback.format_exc()
+        finally:
+            self.toc()
+
 
 class BatchManager:
     """ Class used to generate and handle the creation of batches
@@ -150,16 +166,20 @@ class BatchManager:
         uuidSuffix = str(uuid4()).split('-')[0]
         return f"{nowPrefix}_{countStr}_{uuidSuffix}"
 
-    def _createBatch(self, items, inputFolder=None):
+    def _createBatch(self, items, inputFolder=None, **batchAttrs):
         self._batchCount += 1
         batch_id = self._createBatchId()
         batch_path = os.path.join(self._workingPath, batch_id)
         batch = Batch(id=batch_id,
                       index=self._batchCount,
                       path=batch_path,
-                      items=items)
+                      items=items,
+                      **batchAttrs)
         batch.create()
+        self._createBatchLinks(batch, items, inputFolder=inputFolder)
+        return batch
 
+    def _createBatchLinks(self, batch, items, inputFolder=None):
         if inputFolder is not None:
             batch.mkdir(inputFolder)
 
@@ -168,10 +188,8 @@ class BatchManager:
             baseName = os.path.basename(fn)
             if inputFolder is not None:
                 baseName = os.path.join(inputFolder, baseName)
-            os.symlink(os.path.abspath(fn),
-                       os.path.join(batch_path, baseName))
+            os.symlink(os.path.abspath(fn), batch.join(baseName))
 
-        return batch
 
     def generate(self):
         """ Generate batches based on the input items. """
@@ -187,3 +205,48 @@ class BatchManager:
         if items:
             yield self._createBatch(items)
 
+
+class MdocBatchManager(BatchManager):
+    """ Batch manager for Tilt-series. """
+
+    def __init__(self, tsIterator, workingPath, suffix=None, movies=None):
+        """
+        Args:
+            tsIterator: input tilt-series iterator
+            workingPath: path where the batches folder will be created
+            suffix: suffix to be removed from mdoc filename to generate
+                the tilt-series name
+        """
+        BatchManager.__init__(self, 0, tsIterator, workingPath,
+                              itemFileNameFunc=lambda item: item[1]['SubFramePath'])
+        self._suffix = suffix
+        self._movies = movies
+
+    def _subframePath(self, mdocFn, section):
+        movieFolder = self._movies or os.path.dirname(mdocFn)
+        return os.path.join(movieFolder, Mdoc.getSubFrameBase(section))
+
+    def _tsName(self, mdocFn):
+        name = Path.removeBaseExt(mdocFn)
+        if self._suffix:
+            name = name.replace(self._suffix, '')
+        return name
+
+    def generate(self):
+        """ Generate batches based on the input items. """
+        for mdoc in self._items:
+            mdocFn = mdoc['MdocFile']['Path']
+            yield self._createBatch(mdoc.zvalues, mdoc=mdoc, tsName=self._tsName(mdocFn))
+
+    def _createBatchLinks(self, batch, items, inputFolder=None):
+        mdocFn = batch['mdoc']['MdocFile']['Path']
+
+        def _absfn(item):
+            return os.path.abspath(self._subframePath(mdocFn, item[1]))
+
+        framesFolder = os.path.dirname(_absfn(items[0]))
+        os.symlink(framesFolder, batch.join('frames'))
+
+        for item in items:
+            baseName = os.path.basename(_absfn(item))
+            os.symlink(os.path.join('frames', baseName), batch.join(baseName))
