@@ -158,6 +158,9 @@ def main():
                    help='Copy directory with some delay')
     g.add_argument('--check_dirs', nargs=2, metavar=('DIR1', 'DIR2'),
                    help='Check if the two directories are synchronized. ')
+    g.add_argument('--rsync_dirs', nargs=2, metavar=('DIR1', 'DIR2'),
+                   help='Rsync both directories and print the number of '
+                        'transferred files. ')
 
     p.add_argument('--bin', '-b', type=int, default=6000,
                    help="Create bins of the given time in minutes "
@@ -213,6 +216,10 @@ def main():
         sync = Path.inSync(dirs[0], dirs[1], verbose=True)
         s = Color.green('in SYNC') if sync else Color.red('NOT in SYNC')
         print(f"Dirs are {s}")
+
+    elif dirs := args.rsync_dirs:
+        n = Path.rsync(dirs[0], dirs[1], verbose=True)
+        print(f"Transferred files: {n}")
 
     elif pattern := args.timing:
         timeStats(pattern, args.bin, args.plot)

@@ -97,19 +97,36 @@ class Path:
         Use rsync as a subprocess to check if the two directories
         are synchronized. Both directories must exist.
         """
+        return Path.rsync(dir1, dir2, dry=True, verbose=verbose) == 0
+
+    @staticmethod
+    def rsync(dir1, dir2, dry=False, verbose=False):
+        """ Run rsync to synchronize dir1 and dir2 are synchronized (i.e. same content)
+        Use rsync as a subprocess to synchronize dir1 and dir2 and return
+        the number of files transferred.
+        """
         dir1 = Path.addslash(dir1)
         dir2 = Path.addslash(dir2)
 
-        p = Process('rsync', '--dry-run', '-a', '--stats', dir1, dir2)
+        args = ['rsync', '-a', '--stats', dir1, dir2]
+        if dry:
+            args.insert(1, '--dry-run')
+
+        p = Process(*args)
+
         if verbose:
             p.print(stdout=True)
 
         transf = 1
         for line in p.lines():
             if 'files transferred:' in line:
-                transf = int(line.split(':')[1])
+                value = line.split(':')[1]
+                # Remove , that is used to separate thousands
+                transf = int(value.replace(',', ''))
                 break
-        return transf == 0
+
+        return transf
+
 
     @staticmethod
     def lastModified(folder):
