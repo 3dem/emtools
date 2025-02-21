@@ -80,7 +80,7 @@ class Pretty:
     @staticmethod
     def elapsed(timestamp, now=None):
         """
-        Get a datetime object or a int() Epoch timestamp and return a
+        Get a datetime object or an int() Epoch timestamp and return a
         pretty string like 'an hour ago', 'Yesterday', '3 months ago',
         'just now', etc
         """
