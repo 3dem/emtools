@@ -510,7 +510,7 @@ class RelionStar:
             'rlnMicrographOriginalPixelSize': origPs,
             'rlnVoltage': acq['voltage'],
             'rlnSphericalAberration': acq['cs'],
-            'rlnAmplitudeContrast': acq.get('amplitude_constrast', 0.1),
+            'rlnAmplitudeContrast': acq.get('amplitude_contrast', 0.1),
             'rlnMicrographPixelSize': acq['pixel_size']
         }
         if mtf:
@@ -617,7 +617,7 @@ class RelionStar:
                              o['rlnMicrographOriginalPixelSize']),
             voltage=o['rlnVoltage'],
             cs=o['rlnSphericalAberration'],
-            amplitude_constrast=o.get('rlnAmplitudeContrast', 0.1)
+            amplitude_contrast=o.get('rlnAmplitudeContrast', 0.1)
         )
 
     @staticmethod
