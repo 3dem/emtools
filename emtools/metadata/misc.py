@@ -324,32 +324,32 @@ class Acquisition(dict):
 
     @property
     def pixel_size(self):
-        return self['pixel_size']
+        return float(self['pixel_size'])
 
     @pixel_size.setter
     def pixel_size(self, value):
-        self['pixel_size'] = value
+        self['pixel_size'] = float(value)
 
     @property
     def voltage(self):
-        return self['voltage']
+        return float(self['voltage'])
 
     @voltage.setter
     def voltage(self, value):
-        self['voltage'] = value
+        self['voltage'] = float(value)
 
     @property
     def cs(self):
-        return self['cs']
+        return float(self['cs'])
 
     @cs.setter
     def cs(self, value):
-        self['cs'] = value
+        self['cs'] = float(value)
 
     @property
     def amplitude_contrast(self):
-        return self.get('amplitude_contrast', 0.1)
+        return float(self.get('amplitude_contrast', 0.1))
 
     @amplitude_contrast.setter
     def amplitude_contrast(self, value):
-        self['amplitude_contrast'] = value
+        self['amplitude_contrast'] = float(value)

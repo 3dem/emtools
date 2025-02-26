@@ -96,10 +96,18 @@ class Process:
                 pids.add(proc.pid)
 
         attrs = ['pid', 'ppid', 'name', 'cwd', 'username', 'memory_percent', 'cpu_percent']
+        def _filter_name(proc):
+            if program and program not in proc.info['name']:
+                cmdline = proc.cmdline()
+                if len(cmdline) == 0 or program not in cmdline[0]:
+                    return False
+            return True
+
         for proc in psutil.process_iter(attrs):
-            if not program or program in proc.info['name']:
+            if _filter_name(proc):
                 folder = proc.info['cwd']
                 if workingDir is None or folder == workingDir:
+                    print(f"program: {program}, proc_info: {proc.info['name']}")
                     _addProc(folder, proc)
                     if children:
                         for child in proc.children(recursive=True):
