@@ -249,6 +249,7 @@ class FolderManager:
     def __init__(self, path):
         self.__path = path
         self._logId = ""
+        self.__extraLog = None
 
     def join(self, *p):
         return os.path.join(self.__path, *p)
@@ -274,7 +275,12 @@ class FolderManager:
         Process.system(f"rm -rf '{self.path}'", **kwargs)
         Process.system(f"mkdir -p '{self.path}'", **kwargs)
 
-    def log(self, msg):
+    def log(self, msg, flush=False):
         logMsg = f"{Pretty.now()}:{self._logId} {msg}"
-        print(logMsg)
+        print(logMsg, flush=flush)
+        if self.__extraLog:
+            self.__extraLog(logMsg, flush=flush)
         return logMsg
+
+    def setExtraLog(self, logFunc):
+        self.__extraLog = logFunc
