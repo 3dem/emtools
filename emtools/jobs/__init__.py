@@ -15,7 +15,8 @@
 # **************************************************************************
 
 from .pipeline import Pipeline
-from .batch_manager import Args, Batch, BatchManager, MdocBatchManager
+from .batch_manager import Args, Batch, BatchManager, MdocBatchManager, Vars
 from .workflow import Workflow
 
-__all__ = ["Pipeline", "BatchManager", "Batch", "Args", "Workflow", "MdocBatchManager"]
+__all__ = ["Pipeline", "BatchManager", "Batch", "Args", "Vars",
+           "Workflow", "MdocBatchManager"]

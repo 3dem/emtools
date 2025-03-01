@@ -41,6 +41,29 @@ class Args(dict):
         return ' '.join("%s %s" % (k, v) for k, v in self.items())
 
 
+class Vars:
+    """ Handle variable definitions, either from input dict
+    or from os.environ.
+    """
+    def __init__(self, vars={}):
+        self._vars = vars
+
+    def get(self, key, is_path=False):
+        """ Get the var for that Key, raising exception if the var does not exist.
+        If is_path = True, validates that the path exists.
+        """
+        value = self._vars.get(key, os.environ.get(key, None))
+
+        if value is None:
+            raise Exception(f"ERROR: Missing expected variable {key}.")
+
+        if is_path and not os.path.exists(value):
+            raise Exception(f"ERROR: Variable {key}={value} does not exist.")
+
+        return value
+
+
+
 class Batch(dict, FolderManager):
     """ Subclass from dict with some utilities related to Batch logic. """
     def __init__(self, *args, **kwargs):
