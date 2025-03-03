@@ -208,7 +208,7 @@ class MovieFiles(DataFiles):
     def __init__(self, **kwargs):
         DataFiles.__init__(self, filters=[self.is_movie], **kwargs)
         self._moviesSuffix = kwargs.get('moviesSuffix',
-                                        ['fractions.tiff', '.eer'])
+                                        ['fractions.tiff', '.eer', 'fractions.mrc'])
 
     def is_movie(self, fn):
         return any(fn.endswith(s) for s in self._moviesSuffix)

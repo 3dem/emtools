@@ -25,7 +25,8 @@ from .misc import MovieFiles
 
 
 class EPU:
-    MOVIES_SUFFICES = ['_fractions.tiff', '_EER.eer']
+    MOVIES_SUFFICES = ['_fractions.tiff', '_EER.eer', '_fractions.mrc']
+
     @staticmethod
     def get_acquisition(movieXmlFn):
         """ Parse acquisition parameters from EPU's xml movie file. """
