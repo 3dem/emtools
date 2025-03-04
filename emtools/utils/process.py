@@ -22,6 +22,8 @@ import psutil
 import subprocess
 import logging
 
+from .color import Color
+
 
 def _print(*msgs):
     print(*msgs)
@@ -115,6 +117,45 @@ class Process:
                             _addProc(folder, child)
 
         return processes
+
+    @staticmethod
+    def checkChilds(programName, folderPath, kill=False, verbose=0):
+        from .system import System
+        specs = System.specs()
+        cpus = specs['CPUs']
+        processes = Process.ps(programName, workingDir=folderPath, children=True)
+
+        color = Color.red if kill else Color.bold
+
+        for folder, procs in processes.items():
+            print(Color.warn(f"{folder}"))
+            header = f"     {'USER':<15} {'PPID/PID':<15} {color('PROGRAM'):<30}"
+            if verbose > 0:
+                header += f" {'CPU(%)':>10} {'MEMORY(%)':>10}"
+                if verbose > 1:
+                    header += f" {'COMMAND LINE'}"
+
+            print(Color.bold(header))
+
+            prefix = 'Killing' if kill else ''
+            for p in procs:
+                pidstr = f"{p.info['ppid']}/{p.pid}"
+                msg = f"   {prefix}  {p.info['username']:<15} {pidstr:<15} {color(p.info['name']):<30}"
+                if verbose > 0:
+                    try:
+                        cpu_percent = p.cpu_percent(interval=1) / cpus
+                    except:
+                        continue
+
+                    msg += f" {cpu_percent:>10,.2f} {p.info['memory_percent']:>10,.2f}"
+                    if verbose > 1:
+                        msg += f" {p.cmdline()}"
+                print(msg)
+                if kill:
+                    try:
+                        p.kill()
+                    except:
+                        pass
 
     class Logger:
         """ Use a logger to log commands that are executed via os.system. """

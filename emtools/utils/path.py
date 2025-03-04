@@ -27,6 +27,9 @@ from .process import Process
 from .color import Color
 
 
+GLOB_CHARS = ['*', '?', '[', ']']
+
+
 class Path:
     """
     Group some path utility functions.
@@ -242,6 +245,10 @@ class Path:
         from os.path.exists.
         """
         return path and os.path.exists(path)
+
+    @staticmethod
+    def isPattern(path):
+        return any(c in path for c in GLOB_CHARS)
 
 
 class FolderManager:
