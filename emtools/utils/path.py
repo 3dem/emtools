@@ -276,6 +276,10 @@ class FolderManager:
     def path(self):
         return self.__path
 
+    @path.setter
+    def path(self, value):
+        self.__path = value
+
     def create(self, **kwargs):
         """ Create batch folder. """
         self.log(f"Creating folder: {self.path}")
@@ -291,3 +295,4 @@ class FolderManager:
 
     def setExtraLog(self, logFunc):
         self.__extraLog = logFunc
+

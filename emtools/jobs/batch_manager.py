@@ -63,7 +63,6 @@ class Vars:
         return value
 
 
-
 class Batch(dict, FolderManager):
     """ Subclass from dict with some utilities related to Batch logic. """
     def __init__(self, *args, **kwargs):
@@ -106,11 +105,13 @@ class Batch(dict, FolderManager):
     def dump_info(self):
         self.dump(self.info, 'info.json')
 
-    def dump_all(self):
-        self.dump(self, 'batch.json')
+    def dump_all(self, fn=None):
+        fileName = fn or 'batch.json'
+        self.dump(self, fileName)
 
-    def load_all(self):
-        with open(self.join('batch.json')) as f:
+    def load_all(self, fn=None):
+        filePath = fn or self.join('batch.json')
+        with open(filePath) as f:
             self.update(json.load(f))
 
     def call(self, program, kwargs, logfile=None, verbose=False, cwd=True):
@@ -167,7 +168,8 @@ class BatchManager:
     folder.
     """
     def __init__(self, batchSize, inputItemsIterator, workingPath,
-                 itemFileNameFunc=lambda item: item.getFileName()):
+                 itemFileNameFunc=lambda item: item.getFileName(),
+                 createBatch=True):
         """
         Args:
             batchSize: Number of items that will be grouped into one batch
@@ -181,6 +183,7 @@ class BatchManager:
         self._batchCount = 0
         self._workingPath = workingPath
         self._itemFileNameFunc = itemFileNameFunc
+        self._create = createBatch
 
     def _createBatchId(self):
         # We will use batchCount, before the batch is created
@@ -198,8 +201,9 @@ class BatchManager:
                       path=batch_path,
                       items=items,
                       **batchAttrs)
-        batch.create()
-        self._createBatchLinks(batch, items, inputFolder=inputFolder)
+        if self._create:
+            batch.create()
+            self._createBatchLinks(batch, items, inputFolder=inputFolder)
         return batch
 
     def _createBatchLinks(self, batch, items, inputFolder=None):
@@ -212,7 +216,6 @@ class BatchManager:
             if inputFolder is not None:
                 baseName = os.path.join(inputFolder, baseName)
             os.symlink(os.path.abspath(fn), batch.join(baseName))
-
 
     def generate(self):
         """ Generate batches based on the input items. """
