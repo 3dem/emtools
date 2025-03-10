@@ -124,7 +124,11 @@ class StarFile(AbstractContextManager):
                 types=None, optional types dict with {columnName: columnType}
                     pairs that allows to specify types for certain columns.
         """
-        self.__createTable(tableName, **kwargs)
+        try:
+            self.__createTable(tableName, **kwargs)
+        except:
+            return None
+
         if self._singleRow:
             self._table.addRow(self.__rowFromValues(self._values))
         else:
@@ -286,6 +290,8 @@ class StarFile(AbstractContextManager):
                     break
                 line = f.readline()
             # Start from the beginning and scann until complete the full loop
+            if initial_offset == 0:
+                break
             f.seek(0)
             offset = 0
             line = f.readline()
