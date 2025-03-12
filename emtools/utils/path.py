@@ -296,3 +296,7 @@ class FolderManager:
     def setExtraLog(self, logFunc):
         self.__extraLog = logFunc
 
+    def listdir(self):
+        """ Return files relative to the path. """
+        return os.listdir(self.path)
+

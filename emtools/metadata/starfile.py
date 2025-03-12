@@ -533,8 +533,10 @@ class RelionStar:
 
     @staticmethod
     def micrograph_table(**kwargs):
-        extra_cols = kwargs.get('extra_cols', [])
-        return Table([
+        cols = []
+        if image_id := kwargs.get('image_id', None):
+            cols.append(image_id)
+        cols.extend([
             'rlnMicrographName',
             'rlnOpticsGroup',
             'rlnCtfImage',
@@ -544,7 +546,10 @@ class RelionStar:
             'rlnDefocusAngle',
             'rlnCtfFigureOfMerit',
             'rlnCtfMaxResolution'
-        ] + extra_cols)
+        ])
+        if extra_cols := kwargs.get('extra_cols', []):
+            cols.extend(extra_cols)
+        return Table(cols)
 
     @staticmethod
     def coordinates_table(**kwargs):
