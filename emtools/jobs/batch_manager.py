@@ -97,11 +97,6 @@ class Batch(dict, FolderManager):
     def error(self, value):
         self.info['error'] = str(value)
 
-    def dump(self, obj, fn):
-        filePath = self.join(fn)
-        with open(filePath, 'w') as f:
-            json.dump(obj, f, indent=4)
-
     def dump_info(self):
         self.dump(self.info, 'info.json')
 

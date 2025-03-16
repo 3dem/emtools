@@ -18,6 +18,7 @@ import os
 import shutil
 import time
 import tempfile
+import json
 from datetime import datetime as dt
 from collections import OrderedDict
 from contextlib import contextmanager
@@ -299,4 +300,9 @@ class FolderManager:
     def listdir(self):
         """ Return files relative to the path. """
         return os.listdir(self.path)
+
+    def dump(self, obj, fn):
+        filePath = self.join(fn)
+        with open(filePath, 'w') as f:
+            json.dump(obj, f, indent=4)
 
