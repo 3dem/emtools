@@ -454,20 +454,23 @@ class StarMonitor:
 
     def update(self):
         newRows = []
-        now = datetime.now()
-        mTime = datetime.fromtimestamp(os.path.getmtime(self.fileName))
 
-        if self.lastCheck is None or mTime > self.lastCheck:
-            with StarFile(self.fileName) as sf:
-                for row in sf.iterTable(self._tableName):
-                    rowKey = self._rowKeyFunc(row)
-                    if rowKey not in self._seenItems:
-                        self._seenItems.add(rowKey)
-                        newRows.append(row)
+        if os.path.exists(self.fileName):
+            now = datetime.now()
+            mTime = datetime.fromtimestamp(os.path.getmtime(self.fileName))
 
-        self.lastCheck = now
-        if newRows:
-            self.lastUpdate = now
+            if self.lastCheck is None or mTime > self.lastCheck:
+                with StarFile(self.fileName) as sf:
+                    for row in sf.iterTable(self._tableName):
+                        rowKey = self._rowKeyFunc(row)
+                        if rowKey not in self._seenItems:
+                            self._seenItems.add(rowKey)
+                            newRows.append(row)
+
+            self.lastCheck = now
+            if newRows:
+                self.lastUpdate = now
+
         return newRows
 
     def timedOut(self):
