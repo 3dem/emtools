@@ -124,7 +124,11 @@ class StarFile(AbstractContextManager):
                 types=None, optional types dict with {columnName: columnType}
                     pairs that allows to specify types for certain columns.
         """
-        self.__createTable(tableName, **kwargs)
+        try:
+            self.__createTable(tableName, **kwargs)
+        except:
+            return None
+
         if self._singleRow:
             self._table.addRow(self.__rowFromValues(self._values))
         else:
@@ -286,6 +290,8 @@ class StarFile(AbstractContextManager):
                     break
                 line = f.readline()
             # Start from the beginning and scann until complete the full loop
+            if initial_offset == 0:
+                break
             f.seek(0)
             offset = 0
             line = f.readline()
@@ -448,20 +454,23 @@ class StarMonitor:
 
     def update(self):
         newRows = []
-        now = datetime.now()
-        mTime = datetime.fromtimestamp(os.path.getmtime(self.fileName))
 
-        if self.lastCheck is None or mTime > self.lastCheck:
-            with StarFile(self.fileName) as sf:
-                for row in sf.iterTable(self._tableName):
-                    rowKey = self._rowKeyFunc(row)
-                    if rowKey not in self._seenItems:
-                        self._seenItems.add(rowKey)
-                        newRows.append(row)
+        if os.path.exists(self.fileName):
+            now = datetime.now()
+            mTime = datetime.fromtimestamp(os.path.getmtime(self.fileName))
 
-        self.lastCheck = now
-        if newRows:
-            self.lastUpdate = now
+            if self.lastCheck is None or mTime > self.lastCheck:
+                with StarFile(self.fileName) as sf:
+                    for row in sf.iterTable(self._tableName):
+                        rowKey = self._rowKeyFunc(row)
+                        if rowKey not in self._seenItems:
+                            self._seenItems.add(rowKey)
+                            newRows.append(row)
+
+            self.lastCheck = now
+            if newRows:
+                self.lastUpdate = now
+
         return newRows
 
     def timedOut(self):
@@ -527,8 +536,10 @@ class RelionStar:
 
     @staticmethod
     def micrograph_table(**kwargs):
-        extra_cols = kwargs.get('extra_cols', [])
-        return Table([
+        cols = []
+        if image_id := kwargs.get('image_id', None):
+            cols.append(image_id)
+        cols.extend([
             'rlnMicrographName',
             'rlnOpticsGroup',
             'rlnCtfImage',
@@ -538,7 +549,10 @@ class RelionStar:
             'rlnDefocusAngle',
             'rlnCtfFigureOfMerit',
             'rlnCtfMaxResolution'
-        ] + extra_cols)
+        ])
+        if extra_cols := kwargs.get('extra_cols', []):
+            cols.extend(extra_cols)
+        return Table(cols)
 
     @staticmethod
     def coordinates_table(**kwargs):
