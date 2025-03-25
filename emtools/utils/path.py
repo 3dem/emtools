@@ -18,6 +18,7 @@ import os
 import shutil
 import time
 import tempfile
+import json
 from datetime import datetime as dt
 from collections import OrderedDict
 from contextlib import contextmanager
@@ -276,6 +277,10 @@ class FolderManager:
     def path(self):
         return self.__path
 
+    @path.setter
+    def path(self, value):
+        self.__path = value
+
     def create(self, **kwargs):
         """ Create batch folder. """
         self.log(f"Creating folder: {self.path}")
@@ -291,3 +296,13 @@ class FolderManager:
 
     def setExtraLog(self, logFunc):
         self.__extraLog = logFunc
+
+    def listdir(self):
+        """ Return files relative to the path. """
+        return os.listdir(self.path)
+
+    def dump(self, obj, fn):
+        filePath = self.join(fn)
+        with open(filePath, 'w') as f:
+            json.dump(obj, f, indent=4)
+
