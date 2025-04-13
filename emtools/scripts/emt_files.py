@@ -31,11 +31,24 @@ def statsDir(folder, sort):
     df = MovieFiles()
     df.scan(folder)
     df.print(sort=sort)
-    df.counters[1].print('movie')
 
 
-def timeStats(pattern, bin, plot):
-    files = glob(pattern)
+def countMovies(folder):
+    m = 0
+    for root, dirs, files in os.walk(folder):
+        for fn in files:
+            if EPU.is_movie_fn(fn):
+                m += 1
+    return m
+
+
+def timeStats(pattern, bin, plot, data):
+    files = []
+    if os.path.isdir(pattern):
+        for root, dirs, dfiles in os.walk(pattern):
+            files.extend(os.path.join(root, fn) for fn in dfiles)
+    else:
+        files = glob(pattern)
     total_size = 0
     filesDict = {}
 
@@ -51,6 +64,8 @@ def timeStats(pattern, bin, plot):
     first = fs[0]
     last = fs[-1]
 
+    to_GB = 1 / (1024 ** 3)
+
     if bin:
         bindelta = timedelta(minutes=bin)
         start = datetime.fromtimestamp(first[1]['ts'])
@@ -60,7 +75,8 @@ def timeStats(pattern, bin, plot):
             end = last_bin['end']
             ts = datetime.fromtimestamp(v['ts'])
             if ts <= end:
-                last_bin['count'] += 1
+                value = 1 if not data else v['size'] * to_GB
+                last_bin['count'] += value
             else:
                 bins.append({'start': end,
                              'end': end + bindelta,
@@ -117,7 +133,8 @@ def timeStats(pattern, bin, plot):
         w = width * 0.9
         ax.bar(x + w / 2, values, w, label='Men')
         # Add some text for labels, title and custom x-axis tick labels, etc.
-        ax.set_ylabel('Files')
+        ylabel = 'Files' if not data else 'Data (Gb)'
+        ax.set_ylabel(ylabel)
         ax.set_title(f'Files generated every {bin} minutes')
         ax.set_xticks(x)
         ax.set_xticklabels(labels)
@@ -151,9 +168,11 @@ def main():
     g = p.add_mutually_exclusive_group()
     g.add_argument('--stats', '-s', metavar='FOLDER',
                    help="Statistics of the files in a given folder.")
-    g.add_argument('--timing', metavar='PATTERN',
+    g.add_argument('--timing', metavar='FOLDER_OR_PATTERN',
                    help="Compute histogram from the timestamps of files "
-                        "matching the pattern.")
+                        "in the folder or matching the pattern.")
+    g.add_argument('--count_movies', '-m', nargs='+', 
+                   help="Count number of movies for each input folder")
     g.add_argument('--copy_dir', nargs=2, metavar=('SRC_DIR', 'NEW_DIR'),
                    help='Copy directory with some delay')
     g.add_argument('--check_dirs', nargs=2, metavar=('DIR1', 'DIR2'),
@@ -167,7 +186,9 @@ def main():
                         "(with --timing)")
     p.add_argument('--plot', '-p', action='store_true',
                    help="Plot the number of files per bin  "
-                        "(with --stats)")
+                        "(with --timing)")
+    p.add_argument('--data', '-a', action='store_true',
+                   help="Use file size for the timing plot")
     p.add_argument('--delay', '-d', type=float, default=0,
                    help="Delay in seconds when copying files "
                         "(with --copy_dir)")
@@ -217,12 +238,20 @@ def main():
         s = Color.green('in SYNC') if sync else Color.red('NOT in SYNC')
         print(f"Dirs are {s}")
 
+    elif dirs := args.count_movies:
+        maxlen = max(len(d) for d in dirs)
+        def _pad(s):
+            return (maxlen - len(s)) * ' ' + s
+
+        for d in dirs:
+            print(f"{_pad(d)}: {countMovies(d):>8}")    
+
     elif dirs := args.rsync_dirs:
         n = Path.rsync(dirs[0], dirs[1], verbose=True)
         print(f"Transferred files: {n}")
 
     elif pattern := args.timing:
-        timeStats(pattern, args.bin, args.plot)
+        timeStats(pattern, args.bin, args.plot, args.data)
 
     # TODO: check from here
     elif args.transfer:
