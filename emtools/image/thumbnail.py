@@ -21,6 +21,7 @@ import mrcfile
 import tifffile
 
 import PIL
+from PIL import Image
 
 
 class Thumbnail:
