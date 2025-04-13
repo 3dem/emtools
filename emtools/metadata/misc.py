@@ -19,7 +19,7 @@ import pathlib
 from datetime import datetime, timedelta
 from glob import glob
 
-from emtools.utils import Path, Pretty, Process
+from emtools.utils import Path, Pretty, Process, Timer
 
 
 class Bins:
@@ -135,7 +135,8 @@ class DataFiles:
                       f"\n\ttime: {last_dt}")
 
             if self.first and self.last_ts:
-                print(f"Duration: {(last_dt - first_dt).seconds / 3600:0.2f} hours")
+                #print(f"Duration: {(last_dt - first_dt).seconds / 3600:0.2f} hours")
+                print(f"Duration: {Pretty.delta(last_dt - first_dt)}")
 
             print(f"Total {name}s: {self.total}, size: {Pretty.size(self.total_size)}")
 
@@ -161,12 +162,17 @@ class DataFiles:
 
     def scan(self, folder):
         """ Scan a folder and register all files recursively. """
+        t = Timer()
+
         self.root = Path.addslash(folder)
+        self._total_dirs = 0
 
         for root, dirs, files in os.walk(folder):
             for fn in files:
                 self.register(os.path.join(root, fn))
             self._total_dirs += len(dirs)
+
+        #t.toc("Scanned")
 
     def register(self, filename, stat=None):
         """ Register a file, if stat is None it will be calculated. """
