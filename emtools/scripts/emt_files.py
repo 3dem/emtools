@@ -33,15 +33,6 @@ def statsDir(folder, sort):
     df.print(sort=sort)
 
 
-def countMovies(folder):
-    m = 0
-    for root, dirs, files in os.walk(folder):
-        for fn in files:
-            if EPU.is_movie_fn(fn):
-                m += 1
-    return m
-
-
 def timeStats(pattern, bin, plot, data):
     files = []
     if os.path.isdir(pattern):
@@ -244,7 +235,7 @@ def main():
             return (maxlen - len(s)) * ' ' + s
 
         for d in dirs:
-            print(f"{_pad(d)}: {countMovies(d):>8}")    
+            print(f"{_pad(d)}: {EPU.count_movies(d):>8}")
 
     elif dirs := args.rsync_dirs:
         n = Path.rsync(dirs[0], dirs[1], verbose=True)
