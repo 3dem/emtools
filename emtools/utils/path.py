@@ -104,7 +104,9 @@ class Path:
         return Path.rsync(dir1, dir2, '--dry-run', verbose=verbose) == 0
 
     @staticmethod
-    def rsync(dir1, dir2, *args, verbose=False):
+    def rsync(dir1, dir2, *args,
+              verbose=False,
+              size=False):
         """ Run rsync to synchronize dir1 and dir2 are synchronized (i.e. same content)
         Use rsync as a subprocess to synchronize dir1 and dir2 and return
         the number of files transferred.
@@ -113,25 +115,32 @@ class Path:
             dir2: destination directory
             *args: extra arguments to rsync
             verbose: If True, print the command to stdout
+            size: If True, a tuple is returned with transferred files and transferred data size
         """
         dir1 = Path.addslash(dir1)
         dir2 = Path.addslash(dir2)
 
         cmd = ['rsync'] + list(args) + ['-a', '--stats', dir1, dir2]
-        p = Process(*cmd)
+        p = Process(*cmd, doRaise=True)
 
         if verbose:
             p.print(stdout=True)
 
-        transf = 1
-        for line in p.lines():
-            if 'files transferred:' in line:
-                value = line.split(':')[1]
-                # Remove , that is used to separate thousands
-                transf = int(value.replace(',', ''))
-                break
+        def _value(line):
+            # Get the value after the colon (:)
+            # and remove , that is used to separate thousands
+            return int(line.split(':')[1].replace(',', ''))
 
-        return transf
+        transf = 0
+        transfSize = 0
+
+        for line in p.lines():
+            if 'Number of regular files transferred:' in line:
+                transf = _value(line)
+            elif 'Total transferred file size:' in line:
+                transfSize = _value(line.replace('bytes', ''))
+
+        return (transf, transfSize) if size else transf
 
 
     @staticmethod
