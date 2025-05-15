@@ -317,3 +317,6 @@ class FolderManager:
         with open(filePath, 'w') as f:
             json.dump(obj, f, indent=4)
 
+    def rename(self, oldFn, newFn):
+        os.rename(self.join(oldFn), self.join(newFn))
+

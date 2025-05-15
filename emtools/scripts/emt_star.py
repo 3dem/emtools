@@ -50,6 +50,18 @@ def groupBy(starFile, table, column):
         print(k, v)
 
 
+def checkDuplicates(inputStar, table, column):
+    items = set()
+    total = 0
+
+    with StarFile(inputStar) as sf:
+        for row in sf.iterTable(table):
+            items.add(row.get(column))
+            total += 1
+
+    print(f">>> Duplicates: {total - len(items)}")
+
+
 def splitBy(starFile, column, minSize):
     with StarFile(starFile) as sf:
         tOptics = sf.getTable('optics')
@@ -98,6 +110,9 @@ def main():
                    help="Count rows grouped by a given label")
     p.add_argument('--split_particles', '-s', nargs='+', metavar=('COLUMN', 'minsize'),
                    help="Split input particles by some column")
+    p.add_argument('--duplicates', '-d', nargs=2,
+                   metavar=('TABLE', 'COLUMN'),
+                   help="Check duplicates values for a given label")
 
     args = p.parse_args()
     inputStar = args.input
@@ -109,6 +124,9 @@ def main():
         column = split[0]
         minSize = split[1] if len(split) > 1 else 0
         splitBy(inputStar, column, minSize)
+    elif args.duplicates:
+        table, column = args.duplicates
+        checkDuplicates(inputStar, table, column)
     else:
         printStarInfo(args.input)
 
