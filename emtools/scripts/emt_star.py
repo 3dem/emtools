@@ -52,14 +52,18 @@ def groupBy(starFile, table, column):
 
 def checkDuplicates(inputStar, table, column):
     items = set()
-    total = 0
+    duplicates = []
 
     with StarFile(inputStar) as sf:
         for row in sf.iterTable(table):
-            items.add(row.get(column))
-            total += 1
+            value = row.get(column)
+            if value in items:
+                duplicates.append(value)
+            else:
+                items.add(value)
 
-    print(f">>> Duplicates: {total - len(items)}")
+    print(f">>> Duplicates: {len(duplicates)}\n"
+          f"    {duplicates}")
 
 
 def splitBy(starFile, column, minSize):
