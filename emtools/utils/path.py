@@ -30,6 +30,9 @@ from .color import Color
 
 GLOB_CHARS = ['*', '?', '[', ']']
 
+IMAGE_EXT = ['tiff', 'tif', 'png', 'jpg', 'jpeg']
+TEXT_EXT = ['txt', 'log', 'err', 'out', 'json', 'csv']
+
 
 class Path:
     """
@@ -261,6 +264,14 @@ class Path:
     @staticmethod
     def isPattern(path):
         return any(c in path for c in GLOB_CHARS)
+
+    @staticmethod
+    def isImage(path):
+        return Path.getExt(path).lower()[1:] in IMAGE_EXT
+
+    @staticmethod
+    def isText(path):
+        return Path.getExt(path).lower()[1:] in TEXT_EXT
 
 
 class FolderManager:
