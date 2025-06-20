@@ -36,6 +36,9 @@ class Workflow:
             if not j.inputs:
                 yield j
 
+    def hasJob(self, jobId):
+        return jobId in self._jobs
+
     def getJob(self, jobId):
         return self._jobs[jobId]
 

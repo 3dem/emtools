@@ -23,7 +23,7 @@ import traceback
 from contextlib import contextmanager
 
 from emtools.utils import Color, FolderManager, Timer, Pretty, Path
-from emtools.metadata import Mdoc
+from emtools.metadata import Mdoc, StarFile
 
 
 class Args(dict):
@@ -271,3 +271,28 @@ class MdocBatchManager(BatchManager):
         for item in items:
             baseName = os.path.basename(_absfn(item))
             os.symlink(os.path.join('frames', baseName), batch.join(baseName))
+
+
+class TsStarBatchManager(BatchManager):
+    """
+        Batch manager from a Relion tilt_series.star file.
+        (e.g. after the TS import job)
+    """
+
+    def __init__(self, tsIterator, workingPath):
+        """
+        Args:
+            tsIterator: input tilt-series iterator
+            workingPath: path where the batches folder will be created
+        """
+        BatchManager.__init__(self, 0, tsIterator, workingPath,
+                              itemFileNameFunc=lambda item: item.rlnMicrographMovieName)
+        self._create = False  # Do not create batch folder until processing
+
+    def generate(self):
+        """ Generate batches based on the input items. """
+        for tsRow in self._items:
+            tsName = tsRow.rlnTomoName
+            with StarFile(tsRow.rlnTomoTiltSeriesStarFile) as sf:
+                items = [row._asdict() for row in sf.iterTable(tsName)]
+            yield self._createBatch(items, tsName=tsName)
