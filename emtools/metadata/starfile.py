@@ -371,6 +371,9 @@ class StarFile(AbstractContextManager):
         """ Write to file a line for these row values.
         Order should be ensured that is the same of the expected columns.
         """
+        if isinstance(values, dict):
+            values = values.values()
+
         if not self._format:
             self._computeLineFormat([values])
 
