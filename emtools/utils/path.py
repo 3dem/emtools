@@ -19,6 +19,7 @@ import shutil
 import time
 import tempfile
 import json
+from glob import glob
 from datetime import datetime as dt
 from collections import OrderedDict
 from contextlib import contextmanager
@@ -322,6 +323,9 @@ class FolderManager:
     def listdir(self):
         """ Return files relative to the path. """
         return os.listdir(self.path)
+
+    def glob(self, pattern):
+        return glob(self.join(pattern))
 
     def dump(self, obj, fn):
         filePath = self.join(fn)

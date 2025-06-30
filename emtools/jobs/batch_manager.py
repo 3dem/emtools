@@ -33,7 +33,9 @@ class Args(dict):
         args = []
         for k, v in self.items():
             args.append(str(k))
-            if v != '':
+            if isinstance(v, list):
+                args.extend(str(e) for e in v)
+            elif v != '':
                 args.append((str(v)))
         return args
 
@@ -138,15 +140,15 @@ class Batch(dict, FolderManager):
 
     def toc(self):
         self.info.update({
-            f'{self._timerPrefix}start': self._timer.getTic(),
-            f'{self._timerPrefix}end': Pretty.now(),
-            f'{self._timerPrefix}elapsed': str(self._timer.getElapsedTime())
+            f'{self._timerPrefix}_start': self._timer.getTic(),
+            f'{self._timerPrefix}_end': Pretty.now(),
+            f'{self._timerPrefix}_elapsed': str(self._timer.getElapsedTime())
         })
 
     @contextmanager
-    def execute(self):
+    def execute(self, prefix=''):
         try:
-            self.tic()
+            self.tic(prefix=prefix)
             yield self
         except Exception as e:
             self.error = traceback.format_exc()
