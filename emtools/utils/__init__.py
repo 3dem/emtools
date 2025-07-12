@@ -20,11 +20,11 @@ from .time import Timer
 
 from .process import Process
 from .path import Path, FolderManager
-from .system import System
+from .system import System, GpuMonitor
 
 from .server import JsonTCPServer, JsonTCPClient
 
 
 __all__ = ["Color", "Pretty", "Timer", "Process", "Path", "FolderManager",
-           "System", "JsonTCPServer", "JsonTCPClient"]
+           "System", "JsonTCPServer", "JsonTCPClient", "GpuMonitor"]
 

@@ -335,3 +335,9 @@ class FolderManager:
     def rename(self, oldFn, newFn):
         os.rename(self.join(oldFn), self.join(newFn))
 
+    def link(self, fn, absolute=False):
+        """ Link a file inside the folder and return the basename. """
+        base = os.path.basename(fn)
+        src = os.path.abspath(fn) if absolute else self.relpath(fn)
+        os.symlink(src, self.join(base))
+        return base
