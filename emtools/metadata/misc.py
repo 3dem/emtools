@@ -18,6 +18,7 @@ import os
 import pathlib
 from datetime import datetime, timedelta
 from glob import glob
+import xmltodict
 
 from emtools.utils import Path, Pretty, Process, Timer
 
@@ -323,6 +324,22 @@ class TextFile:
                 line = line.strip()
                 if line and not line.startswith('#'):
                     yield line
+
+
+class WarpXml:
+    """ Helper class to read Warp's XML files. """
+    def __init__(self, xmlPath):
+        with open(xmlPath) as f:
+            self._data = xmltodict.parse(f.read())
+
+    def getDict(self, *keys):
+        """ Navigate the provided keys and get a dict from Name=Value pairs.
+        """
+        d = self._data
+        for k in keys:
+            d = d[k]
+
+        return {e['@Name']: e['@Value'] for e in d}
 
 
 class Acquisition(dict):
