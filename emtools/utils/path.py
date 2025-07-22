@@ -341,3 +341,9 @@ class FolderManager:
         src = os.path.abspath(fn) if absolute else self.relpath(fn)
         os.symlink(src, self.join(base))
         return base
+
+    def copy(self, *paths):
+        """ Copy one or many files into the path. """
+        for p in paths:
+            shutil.copy(p, self.__path)
+
