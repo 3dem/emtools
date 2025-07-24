@@ -376,3 +376,19 @@ class Acquisition(dict):
     @amplitude_contrast.setter
     def amplitude_contrast(self, value):
         self['amplitude_contrast'] = float(value)
+
+    @property
+    def dose(self):
+        return float(self.get('dose', 0.0))
+
+    @dose.setter
+    def dose(self, value):
+        self['dose'] = float(value)
+
+    @property
+    def total_dose(self):
+        return float(self.get('total_dose', 0.0))
+
+    @total_dose.setter
+    def total_dose(self, value):
+        self['total_dose'] = float(value)
