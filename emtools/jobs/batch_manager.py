@@ -15,11 +15,12 @@
 # **************************************************************************
 
 import os
-from uuid import uuid4
-from datetime import datetime
 import json
 import subprocess
 import traceback
+import shlex
+from uuid import uuid4
+from datetime import datetime
 from contextlib import contextmanager
 
 from emtools.utils import Color, FolderManager, Timer, Pretty, Path
@@ -119,6 +120,8 @@ class Batch(dict, FolderManager):
             args = Args(kwargs).toList()
         elif isinstance(kwargs, list):
             args = list(kwargs)
+        elif isinstance(kwargs, str):
+            args = shlex.split(kwargs)
         else:
             raise Exception("Expecting dict or list as arguments")
 
