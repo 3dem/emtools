@@ -101,7 +101,7 @@ class Process:
         def _filter_name(proc):
             if program and program not in proc.info['name']:
                 cmdline = proc.cmdline()
-                if len(cmdline) == 0 or program not in cmdline[0]:
+                if len(cmdline) == 0 or all(program not in cmd for cmd in cmdline):
                     return False
             return True
 
