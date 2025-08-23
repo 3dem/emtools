@@ -19,8 +19,10 @@ import json
 import subprocess
 import traceback
 import shlex
+import time
+from glob import glob
 from uuid import uuid4
-from datetime import datetime
+from datetime import datetime, timedelta
 from contextlib import contextmanager
 
 from emtools.utils import Color, FolderManager, Timer, Pretty, Path
@@ -178,7 +180,7 @@ class BatchManager:
             itemFileNameFunc: function to extract a filename from each item
                 (by default: lambda item: item.getFileName())
         """
-        self._items = inputItemsIterator
+        self._itemsIterator = inputItemsIterator
         self._batchSize = batchSize
         self._batchCount = 0
         self._workingPath = workingPath
@@ -221,7 +223,7 @@ class BatchManager:
         """ Generate batches based on the input items. """
         items = []
 
-        for item in self._items:
+        for item in self._itemsIterator:
             items.append(item)
 
             if len(items) == self._batchSize:
@@ -235,32 +237,84 @@ class BatchManager:
 class MdocBatchManager(BatchManager):
     """ Batch manager for Tilt-series. """
 
-    def __init__(self, tsIterator, workingPath, suffix=None, movies=None):
+    def __init__(self, mdocsPattern, workingPath,
+                 moviesPath=None, **kwargs):
         """
         Args:
-            tsIterator: input tilt-series iterator
+            mdocsPattern: input pattern of Mdocs files
             workingPath: path where the batches folder will be created
-            suffix: suffix to be removed from mdoc filename to generate
-                the tilt-series name
+            moviesPath: path where the frames pointed by Mdocs are
+
+        Kwargs:
+            wait: waiting time in seconds to check for new files
+            timeout: time in seconds to quit after no new files found
+            blacklist: container of tsName that have been processed or want
+                to be avoided
         """
-        BatchManager.__init__(self, 0, tsIterator, workingPath,
+        if not glob(mdocsPattern):
+            raise Exception(f"No mdoc files were found with pattern: {mdocsPattern}")
+
+        BatchManager.__init__(self, 0, self._iterMdocs(mdocsPattern), workingPath,
                               itemFileNameFunc=lambda item: item[1]['SubFramePath'])
-        self._suffix = suffix
-        self._movies = movies
+        self._moviesPath = moviesPath
+        self._wait = kwargs.get('wait', 60)
+        self._timeout = timedelta(seconds=kwargs.get('timeout', 3600))
+        self._blacklist = set(kwargs.get('blacklist', []))
+
+    def _iterMdocs(self, mdocsPattern):
+        """ Iterate over a provided Mdocs pattern. """
+        one_min = timedelta(minutes=1)
+
+        def _newMdoc(now, fn):
+            """ Return True if the file meets the following two conditions:
+            - It has not been processed (in blacklist)
+            - Modification time is more than 1 minute.
+            """
+            tsName = self._tsName(fn)
+            if tsName not in self._blacklist:
+                s = os.stat(fn)
+                dt = datetime.fromtimestamp(s.st_mtime)
+                # Ignore also sessions that have not been updated for
+                # more than X days or that have not been modified since last check
+                if now - dt > one_min:
+                    self._blacklist.add(tsName)
+                    return True
+            return False
+
+        last_found = datetime.now()
+        now = datetime.now()
+
+        def _print(msg):
+            print(f"INPUT MDOCS: {Pretty.now()}: {msg}", flush=True)
+
+        while now - last_found < self._timeout:
+            _print("Checking for new mdocs")
+            if new_mdocs := [fn for fn in glob(mdocsPattern) if _newMdoc(now, fn)]:
+                _print(f"New mdocs found: {str(new_mdocs)}")
+                for mdocFn in new_mdocs:
+                    mdoc = Mdoc.parse(mdocFn)
+                    mdoc['MdocFile'] = {'Path': mdocFn}
+                    yield mdoc
+                last_found = now
+            else:
+                _print("No new Mdocs found, sleeping.")
+
+            time.sleep(self._wait)
+            now = datetime.now()
 
     def _subframePath(self, mdocFn, section):
-        movieFolder = self._movies or os.path.dirname(mdocFn)
+        movieFolder = self._moviesPath or os.path.dirname(mdocFn)
         return os.path.join(movieFolder, Mdoc.getSubFrameBase(section))
 
     def _tsName(self, mdocFn):
         name = Path.removeBaseExt(mdocFn)
-        if self._suffix:
-            name = name.replace(self._suffix, '')
+        # if self._suffix:
+        #     name = name.replace(self._suffix, '')
         return name
 
     def generate(self):
         """ Generate batches based on the input items. """
-        for mdoc in self._items:
+        for mdoc in self._itemsIterator:
             mdocFn = mdoc['MdocFile']['Path']
             yield self._createBatch(mdoc.zvalues, mdoc=mdoc, tsName=self._tsName(mdocFn))
 
@@ -296,7 +350,7 @@ class TsStarBatchManager(BatchManager):
 
     def generate(self):
         """ Generate batches based on the input items. """
-        for tsRow in self._items:
+        for tsRow in self._itemsIterator:
             tsName = tsRow.rlnTomoName
             with StarFile(tsRow.rlnTomoTiltSeriesStarFile) as sf:
                 items = [row._asdict() for row in sf.iterTable(tsName)]
