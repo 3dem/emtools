@@ -173,6 +173,7 @@ class Process:
             # Shortcuts
             self.logger = logger
             self.info = logger.info
+            self.debug = logger.debug
             self.error = logger.error
             self.warning = logger.warning
 
