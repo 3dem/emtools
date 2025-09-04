@@ -159,7 +159,10 @@ class Path:
             t = (f, s.st_mtime)
             last = t if not last or s.st_mtime > last[1] else last
 
-        return last[0], dt.fromtimestamp(last[1])
+        if last:
+            return last[0], dt.fromtimestamp(last[1])
+        else:
+            return None, None
 
     @staticmethod
     def copyFile(file1, file2, sleep=0):
