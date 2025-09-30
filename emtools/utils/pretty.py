@@ -129,4 +129,9 @@ class Pretty:
 
         return _plural(365, 'year')
 
+    @staticmethod
+    def dprint(msg):
+        """ DEBUG print with timestamp and flush. """
+        print(f"{Pretty.now()}: >>> DEBUG: {msg}", flush=True)
+
 

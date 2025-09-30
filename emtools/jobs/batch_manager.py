@@ -45,6 +45,27 @@ class Args(dict):
     def toLine(self):
         return ' '.join("%s %s" % (k, v) for k, v in self.items())
 
+    @staticmethod
+    def fromList(iterable):
+        args = Args()
+        for p in iterable:
+            if p.startswith('--'):
+                last_key = p
+                args[p] = ''
+            else:
+                v = args[last_key]
+
+                if v:
+                    if isinstance(v, list):
+                        v.append(p)
+                    else:
+                        v = [v, p]
+                else:
+                    v = p
+                args[last_key] = v
+
+        return args
+
 
 class Vars:
     """ Handle variable definitions, either from input dict
