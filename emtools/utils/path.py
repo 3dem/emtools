@@ -124,7 +124,7 @@ class Path:
         dir1 = Path.addslash(dir1)
         dir2 = Path.addslash(dir2)
 
-        cmd = ['rsync'] + list(args) + ['-a', '--stats', dir1, dir2]
+        cmd = ['rsync', '-a', '--stats'] + list(args) + [dir1, dir2]
         p = Process(*cmd, doRaise=True)
 
         if verbose:
