@@ -389,7 +389,7 @@ class StarFile(AbstractContextManager):
     def _writeNewline(self):
         self._file.write('\n')
 
-    def _computeLineFormat(self, valuesList):
+    def _computeLineFormat(self, valuesList, all=False):
         """ Compute format base on row values width. """
         # Take a hint for the columns width from the first row
         widths = [len(_formatValue(v)) for v in valuesList[0]]
@@ -398,7 +398,8 @@ class StarFile(AbstractContextManager):
 
         if n > 1:
             # Check middle and last row, just in case ;)
-            for index in [n // 2, -1]:
+            indexes = list(range(len(valuesList))) if all else [n // 2, -1]
+            for index in indexes:
                 for i, v in enumerate(valuesList[index]):
                     w = len(_formatValue(v))
                     if w > widths[i]:
@@ -407,19 +408,24 @@ class StarFile(AbstractContextManager):
         self._format = " ".join("{:>%d%s} " % (w + 1, f)
                                 for w, f in zip(widths, formats)) + '\n'
 
-    def writeTable(self, tableName, table, singleRow=False):
+    def writeTable(self, tableName, table, singleRow=False, computeFormat=False):
         """ Write a Table in Star format to the given file.
 
         Args:
             tableName: The name of the table to write.
             table: Table that is going to be written
             singleRow: If True, don't write *loop\_*, just label/value pairs.
+            computeFormat: compute format based on widest first column,
+                just for aesthetics and not recommended for large tables
         """
         if table.size():
             if singleRow:
                 self.writeSingleRow(tableName, table[0])
             else:
                 self.writeHeader(tableName, table)
+                if computeFormat:
+                    valuesList = [row._asdict().values() for row in table]
+                    self._computeLineFormat(valuesList, all=True)
                 for row in table:
                     self.writeRow(row)
 
@@ -510,6 +516,24 @@ def _escapeStrValue(v):
 class RelionStar:
 
     JOB_INDEX = re.compile('job(\d{3})')
+
+    @staticmethod
+    def to_bool(strValue):
+        """ Convert Relion Yes/No to True/False. """
+        if strValue == 'Yes':
+            return True
+        elif strValue == 'False':
+            return False
+        else:
+            raise Exception(f"Invalid Relion bool value: {strValue}")
+
+    @staticmethod
+    def from_bool(boolValue):
+        """ Return Yes or No string from True/False. """
+        if not isinstance(boolValue):
+            raise Exception("Expecting bool value for Yes/No conversion")
+
+        return 'Yes' if boolValue else 'No'
 
     @staticmethod
     def optics_table(acq, opticsGroup=1, opticsGroupName="opticsGroup1",
@@ -664,7 +688,7 @@ class RelionStar:
             if tables:
                 for name, t in tables.items():
                     if len(t):
-                        sf.writeTable(f"pipeline_{name}", t)
+                        sf.writeTable(f"pipeline_{name}", t, computeFormat=True)
 
     @staticmethod
     def job_index(jobId):
