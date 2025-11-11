@@ -39,8 +39,8 @@ class Workflow:
     def hasJob(self, jobId):
         return jobId in self._jobs
 
-    def getJob(self, jobId):
-        return self._jobs[jobId]
+    def getJob(self, jobId, default=None):
+        return self._jobs.get(jobId, default)
 
     def getData(self, dataId):
         return self.data[dataId]
@@ -52,6 +52,11 @@ class Workflow:
         self.jobNextIndex = jobIndex + 1
         self._jobs[jobId] = job
         return job
+
+    def deleteJob(self, job):
+        for o in job.outputs:
+            del self.data[o.id]
+        del self._jobs[job.id]
 
     def dot(self):
         """ Print the workflow to the terminal. """
