@@ -536,6 +536,36 @@ class RelionStar:
         return 'Yes' if boolValue else 'No'
 
     @staticmethod
+    def read_jobstar(jobStarFile):
+        tValues = StarFile.getTableFromFile(jobStarFile,
+                                            'joboptions_values',
+                                            guessType=False)
+
+        def _val(v):
+            if v == 'Yes':
+                return True
+            elif v == 'No':
+                return False
+            else:
+                return v
+
+        return {row.rlnJobOptionVariable: _val(row.rlnJobOptionValue) for row in tValues}
+
+    @staticmethod
+    def write_jobstar(jobType, values, jobStarFile, isTomo=0, isContinue=0):
+        """ Convert params dict to a Relion job.star file. """
+        with StarFile(jobStarFile, 'w') as sfOut:
+            tJob = Table(['rlnJobTypeLabel', 'rlnJobIsContinue', 'rlnJobIsTomo'])
+            tJob.addRowValues(jobType, isContinue, isTomo)  # FIXME check continue and isTomo
+            sfOut.writeTimeStamp()
+            sfOut.writeTable('job', tJob, singleRow=True)
+            tValues = Table(['rlnJobOptionVariable', 'rlnJobOptionValue'])
+            for k, v in values.items():
+                val = ('Yes' if v else 'No') if isinstance(v, bool) else v
+                tValues.addRowValues(k, val)
+            sfOut.writeTable('joboptions_values', tValues, computeFormat=True)
+
+    @staticmethod
     def optics_table(acq, opticsGroup=1, opticsGroupName="opticsGroup1",
                      mtf=None, originalPixelSize=None):
         origPs = originalPixelSize or acq['pixel_size']
@@ -673,8 +703,8 @@ class RelionStar:
                             'rlnPipeLineNodeTypeLabelDepth']),
             'output_edges': Table(['rlnPipeLineEdgeProcess',
                                    'rlnPipeLineEdgeToNode']),
-            'intput_edges': Table(['rlnPipeLineEdgeFromNode',
-                                   'rlnPipeLineEdgeProcess'])
+            'input_edges': Table(['rlnPipeLineEdgeFromNode',
+                                  'rlnPipeLineEdgeProcess'])
         }
 
     @staticmethod
@@ -752,6 +782,7 @@ class RelionStar:
         tProc = tables['processes']
         tNodes = tables['nodes']
         tOutput = tables['output_edges']
+        tInput = tables['input_edges']
 
         for job in wf.jobs():
             tProc.addRowValues(
@@ -760,6 +791,11 @@ class RelionStar:
                 rlnPipeLineProcessStatusLabel=job['status'],
                 rlnPipeLineProcessTypeLabel=job['jobtype']
             )
+            for i in job.inputs:
+                tInput.addRowValues(
+                    rlnPipeLineEdgeProcess=job.id,
+                    rlnPipeLineEdgeFromNode=i.id
+                )
 
             for o in job.outputs:
                 tNodes.addRowValues(
@@ -771,16 +807,5 @@ class RelionStar:
                     rlnPipeLineEdgeProcess=job.id,
                     rlnPipeLineEdgeToNode=o.id
                 )
-
-            # if tOutput := _table('output_edges'):
-            #     for row in tOutput:
-            #         job = wf.getJob(row.rlnPipeLineEdgeProcess)
-            #         nodeName = row.rlnPipeLineEdgeToNode
-            #         job.registerOutput(nodeName, datatype=nodes[nodeName])
-            #
-            # if tInput := _table('input_edges'):
-            #     for row in tInput:
-            #         job = wf.getJob(row.rlnPipeLineEdgeProcess)
-            #         job.addInputs([wf.getData(row.rlnPipeLineEdgeFromNode)])
 
         RelionStar.write_pipeline(pipelineStar, wf.jobNextIndex, tables)
