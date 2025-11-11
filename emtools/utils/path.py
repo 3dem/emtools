@@ -307,6 +307,10 @@ class FolderManager:
     def path(self, value):
         self.__path = value
 
+    def clear(self):
+        """ Remove existing path. """
+        Process.system(f"rm -rf '{self.path}'")
+
     def create(self, **kwargs):
         """ Create batch folder. """
         self.log(f"Creating folder: {self.path}")
