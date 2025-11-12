@@ -138,7 +138,7 @@ class StarFile(AbstractContextManager):
         return self._table
 
     @staticmethod
-    def getTableFromFile(starFileName, tableName, **kwargs):
+    def getTableFromFile(tableName, starFileName, **kwargs):
         """ Shortcut to read a table from file.
         **kwargs are the same expected by getTable function.
         """
@@ -389,23 +389,26 @@ class StarFile(AbstractContextManager):
     def _writeNewline(self):
         self._file.write('\n')
 
-    def _computeLineFormat(self, valuesList, all=False):
+    def _computeLineFormat(self, valuesList, computeFormat=False):
         """ Compute format base on row values width. """
         # Take a hint for the columns width from the first row
         widths = [len(_formatValue(v)) for v in valuesList[0]]
         formats = [_getFormatStr(v) for v in valuesList[0]]
         n = len(valuesList)
+        a = '>'
 
         if n > 1:
             # Check middle and last row, just in case ;)
-            indexes = list(range(len(valuesList))) if all else [n // 2, -1]
+            indexes = list(range(len(valuesList))) if computeFormat else [n // 2, -1]
+            if computeFormat == 'left':
+                a = '<'
             for index in indexes:
                 for i, v in enumerate(valuesList[index]):
                     w = len(_formatValue(v))
                     if w > widths[i]:
                         widths[i] = w
 
-        self._format = " ".join("{:>%d%s} " % (w + 1, f)
+        self._format = " ".join("{:%s%d%s} " % (a, w + 1, f)
                                 for w, f in zip(widths, formats)) + '\n'
 
     def writeTable(self, tableName, table, singleRow=False, computeFormat=False):
@@ -425,7 +428,7 @@ class StarFile(AbstractContextManager):
                 self.writeHeader(tableName, table)
                 if computeFormat:
                     valuesList = [row._asdict().values() for row in table]
-                    self._computeLineFormat(valuesList, all=True)
+                    self._computeLineFormat(valuesList, computeFormat=computeFormat)
                 for row in table:
                     self.writeRow(row)
 
@@ -537,14 +540,13 @@ class RelionStar:
 
     @staticmethod
     def read_jobstar(jobStarFile):
-        tValues = StarFile.getTableFromFile(jobStarFile,
-                                            'joboptions_values',
+        tValues = StarFile.getTableFromFile('joboptions_values',
+                                            jobStarFile,
                                             guessType=False)
-
         def _val(v):
-            if v == 'Yes':
+            if v in ['Yes', 'True', 'true']:
                 return True
-            elif v == 'No':
+            elif v in ['No', 'False', 'false']:
                 return False
             else:
                 return v
@@ -563,7 +565,7 @@ class RelionStar:
             for k, v in values.items():
                 val = ('Yes' if v else 'No') if isinstance(v, bool) else v
                 tValues.addRowValues(k, val)
-            sfOut.writeTable('joboptions_values', tValues, computeFormat=True)
+            sfOut.writeTable('joboptions_values', tValues, computeFormat='left')
 
     @staticmethod
     def optics_table(acq, opticsGroup=1, opticsGroupName="opticsGroup1",
