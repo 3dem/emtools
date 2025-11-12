@@ -276,7 +276,8 @@ class MdocBatchManager(BatchManager):
             raise Exception(f"No mdoc files were found with pattern: {mdocsPattern}")
 
         BatchManager.__init__(self, 0, self._iterMdocs(mdocsPattern), workingPath,
-                              itemFileNameFunc=lambda item: item[1]['SubFramePath'])
+                              itemFileNameFunc=lambda item: item[1]['SubFramePath'],
+                              createBatch=kwargs.get('createBatch', True))
         self._moviesPath = moviesPath
         self._wait = kwargs.get('wait', 60)
         self._timeout = timedelta(seconds=kwargs.get('timeout', 3600))
@@ -328,10 +329,7 @@ class MdocBatchManager(BatchManager):
         return os.path.join(movieFolder, Mdoc.getSubFrameBase(section))
 
     def _tsName(self, mdocFn):
-        name = Path.removeBaseExt(mdocFn)
-        # if self._suffix:
-        #     name = name.replace(self._suffix, '')
-        return name
+        return Path.removeBaseExt(mdocFn)
 
     def generate(self):
         """ Generate batches based on the input items. """

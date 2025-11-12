@@ -156,11 +156,11 @@ class TaskGenerator(threading.Thread):
         self.outputQueue.notifyGeneratorStarts()
         self.id = threading.get_ident()
 
-        self._print(">>>>>> Iterating generator tasks")
+        # self._print(">>>>>> Iterating generator tasks")
         for task in self._generator():
-            self._print(">>>>>>>> Got task: ", task['id'], "...putting it queue.")
+            # self._print(">>>>>>>> Got task: ", task['id'], "...putting it queue.")
             self.outputQueue.putTask(task, self)
-            self._print(">>>>>>>> SENT task: ", task['id'])
+            # self._print(">>>>>>>> SENT task: ", task['id'])
 
         self.outputQueue.notifyGeneratorEnds()
 
