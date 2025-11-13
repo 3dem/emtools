@@ -411,7 +411,10 @@ class StarFile(AbstractContextManager):
         self._format = " ".join("{:%s%d%s} " % (a, w + 1, f)
                                 for w, f in zip(widths, formats)) + '\n'
 
-    def writeTable(self, tableName, table, singleRow=False, computeFormat=False):
+    def writeTable(self, tableName, table,
+                   singleRow=False,
+                   computeFormat=False,
+                   timeStamp=False):
         """ Write a Table in Star format to the given file.
 
         Args:
@@ -419,8 +422,12 @@ class StarFile(AbstractContextManager):
             table: Table that is going to be written
             singleRow: If True, don't write *loop\_*, just label/value pairs.
             computeFormat: compute format based on widest first column,
-                just for aesthetics and not recommended for large tables
+                just for aesthetics and not recommended for large tables.
+                Values can be 'left' or 'rigth' for alignment.
         """
+        if timeStamp:
+            self.writeTimeStamp()
+
         if table.size():
             if singleRow:
                 self.writeSingleRow(tableName, table[0])
