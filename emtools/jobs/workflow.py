@@ -98,6 +98,12 @@ class Workflow:
         def hasOutput(self, dataId):
             return any(o.id == dataId for o in self.outputs)
 
+        def getOutput(self, dataId):
+            for o in self.outputs:
+                if o.id == dataId:
+                    return o
+            return None
+
         def _validateInputs(self, inputs):
             for i in inputs:
                 if not isinstance(i, Workflow.Data):
