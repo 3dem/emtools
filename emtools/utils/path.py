@@ -155,9 +155,10 @@ class Path:
 
         for fn in files:
             f = os.path.join(folder, fn)
-            s = os.stat(f)
-            t = (f, s.st_mtime)
-            last = t if not last or s.st_mtime > last[1] else last
+            if os.path.exists(f):
+                s = os.stat(f)
+                t = (f, s.st_mtime)
+                last = t if not last or s.st_mtime > last[1] else last
 
         if last:
             return last[0], dt.fromtimestamp(last[1])
