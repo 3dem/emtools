@@ -170,7 +170,8 @@ class Image:
                 return mrc.data.shape[::-1]  # in reverse order
         elif (imageLower.endswith('.tif') or
               imageLower.endswith('.tiff') or
-              imageLower.endswith('.eer')):
+              imageLower.endswith('.eer') or
+              imageLower.endswith('.gain')):
             with tifffile.TiffFile(imagePath) as tif:
                 n = len(tif.pages)
                 y, x = tif.pages[0].shape
