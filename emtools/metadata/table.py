@@ -49,6 +49,9 @@ class Column:
     def setType(self, colType):
         self._type = colType
 
+    def clone(self):
+        return Column(self._name, type=self._type)
+
 
 class ColumnList:
     def __init__(self, columns=None):
@@ -110,6 +113,18 @@ class ColumnList:
                 return getattr(self, key, default)
 
         return Row
+
+    def cloneColumns(self, exclude=None):
+        """ Create a new Table that will have exactly the same columns
+        as this table. Optionally, some columns can be excluded. """
+        excludeList = exclude or []
+        newCols = []
+
+        for colName, col in self._columns.items():
+            if colName not in excludeList:
+                newCols.append(col.clone())
+
+        return Table(newCols)
 
     @staticmethod
     def createColumns(colNames, values, guessType=True, types=None):
