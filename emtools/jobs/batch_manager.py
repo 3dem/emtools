@@ -329,7 +329,11 @@ class MdocBatchManager(BatchManager):
         return os.path.join(movieFolder, Mdoc.getSubFrameBase(section))
 
     def _tsName(self, mdocFn):
-        return Path.removeBaseExt(mdocFn)
+        # Remove all extensions, there are cases like .mrc.mdoc
+        name = mdocFn
+        while Path.getExt(name):
+            name = Path.removeBaseExt(name)
+        return name
 
     def generate(self):
         """ Generate batches based on the input items. """
