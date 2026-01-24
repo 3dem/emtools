@@ -526,6 +526,8 @@ def _escapeStrValue(v):
 class RelionStar:
 
     JOB_INDEX = re.compile('job(\d{3})')
+    TRUE_VALUES = ['Yes', 'True', 'true']
+    FALSE_VALUES = ['No', 'False', 'false']
 
     @staticmethod
     def to_bool(strValue):
@@ -546,14 +548,22 @@ class RelionStar:
         return 'Yes' if boolValue else 'No'
 
     @staticmethod
+    def true_value(v):
+        return v in RelionStar.TRUE_VALUES
+
+    @staticmethod
+    def false_value(v):
+        return v in RelionStar.FALSE_VALUES
+
+    @staticmethod
     def read_jobstar(jobStarFile):
         tValues = StarFile.getTableFromFile('joboptions_values',
                                             jobStarFile,
                                             guessType=False)
         def _val(v):
-            if v in ['Yes', 'True', 'true']:
+            if RelionStar.true_value(v):
                 return True
-            elif v in ['No', 'False', 'false']:
+            elif RelionStar.false_value(v):
                 return False
             else:
                 return v
