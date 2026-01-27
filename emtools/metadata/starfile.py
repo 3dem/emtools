@@ -790,7 +790,10 @@ class RelionStar:
             if tInput := _table('input_edges'):
                 for row in tInput:
                     job = wf.getJob(row.rlnPipeLineEdgeProcess)
-                    job.addInputs([wf.getData(row.rlnPipeLineEdgeFromNode)])
+                    if wf.hasData(row.rlnPipeLineEdgeFromNode):
+                        job.addInputs([wf.getData(row.rlnPipeLineEdgeFromNode)])
+                    else:
+                        print(f"WARNING: Missing input edge: {row.rlnPipeLineEdgeFromNode}")
 
         return wf
 

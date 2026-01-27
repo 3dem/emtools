@@ -42,6 +42,9 @@ class Workflow:
     def getJob(self, jobId, default=None):
         return self._jobs.get(jobId, default)
 
+    def hasData(self, dataId):
+        return dataId in self.data
+
     def getData(self, dataId):
         return self.data[dataId]
 
