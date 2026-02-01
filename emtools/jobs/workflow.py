@@ -88,32 +88,37 @@ class Workflow:
             self.wf = wf
             self.id = jobId
             self.index = index
-            self.inputs = []
-            self.outputs = []
+            self._inputs = {}
+            self._outputs = {}
             self.addInputs(inputs)
+
+        @property
+        def outputs(self):
+            return self._outputs.values()
 
         def registerOutput(self, dataId, **kwargs):
             data = Workflow.Data(self, dataId, **kwargs)
             self.wf.data[dataId] = data
-            self.outputs.append(data)
+            self._outputs[dataId] = data
             return data
 
         def hasOutput(self, dataId):
-            return any(o.id == dataId for o in self.outputs)
+            return dataId in self._outputs
 
-        def getOutput(self, dataId):
-            for o in self.outputs:
-                if o.id == dataId:
-                    return o
-            return None
+        def getOutput(self, dataId, default=None):
+            return self._outputs.get(dataId, default)
 
         def _validateInputs(self, inputs):
             for i in inputs:
                 if not isinstance(i, Workflow.Data):
                     raise Exception(f"Input {i} is not of type Workflow.Data")
-                if i in self.inputs:
+                if i.id in self._inputs:
                     Exception(f'Input {i} was already added.')
                 # TODO validate cyclic dependencies
+
+        @property
+        def inputs(self):
+            return self._inputs.values()
 
         def addInputs(self, inputs):
             if not inputs:
@@ -122,8 +127,11 @@ class Workflow:
             self._validateInputs(inputs)
 
             for i in inputs:
-                self.inputs.append(i)
+                self._inputs[i.id] = i
                 i.childs.append(self)
+
+        def hasInput(self, inputId):
+            return inputId in self._inputs
 
     class Data(dict):
         def __init__(self, parent, dataId, **kwargs):
