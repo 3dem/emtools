@@ -133,6 +133,9 @@ class Workflow:
         def hasInput(self, inputId):
             return inputId in self._inputs
 
+        def clearInputs(self):
+            self._inputs = {}
+
     class Data(dict):
         def __init__(self, parent, dataId, **kwargs):
             dict.__init__(self, **kwargs)
