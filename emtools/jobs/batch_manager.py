@@ -66,6 +66,33 @@ class Args(dict):
 
         return args
 
+    def subset(self, prefix, new_prefix='', filters=None):
+        """ Return a new Args object with a subset of the keys.
+        """
+        filters = filters or []
+        full_prefix = f'{prefix}.'
+
+        def _filter(k, v):
+            return k.startswith(full_prefix)
+
+        result = Args()
+
+        for k, v in self.items():
+            if _filter(k, v):
+                nk = k.replace(full_prefix, new_prefix)
+
+                if isinstance(v, bool):
+                    if 'remove_false' in filters:
+                        if v:  
+                            result[nk] = ''
+                    else:
+                        result[nk] = v
+                else:
+                    if v or 'remove_empty' not in filters:
+                        result[nk] = v
+
+        return result
+
 
 class Vars:
     """ Handle variable definitions, either from input dict
