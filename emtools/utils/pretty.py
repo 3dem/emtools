@@ -16,7 +16,7 @@
 
 import math
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 
 
 class Pretty:
@@ -68,6 +68,20 @@ class Pretty:
     def parse_datetime(dt_str, **kwargs):
         f = kwargs.get('format', Pretty.DATETIME_FORMAT)
         return datetime.strptime(dt_str, f)
+
+    @staticmethod
+    def parse_timedelta(td_str, **kwargs):
+        """Parse 'HH:MM:SS' or 'D days, HH:MM:SS' format"""
+        parts = td_str.split(', ')
+        days = 0
+        if len(parts) == 2:
+            days = int(parts[0].split()[0])
+            time_part = parts[1]
+        else:
+            time_part = parts[0]
+        
+        h, m, s = map(float, time_part.split(':'))
+        return timedelta(days=days, hours=h, minutes=m, seconds=s)
 
     @staticmethod
     def modified(fn, **kwargs):
