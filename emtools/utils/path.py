@@ -32,7 +32,9 @@ from .color import Color
 GLOB_CHARS = ['*', '?', '[', ']']
 
 IMAGE_EXT = ['tiff', 'tif', 'png', 'jpg', 'jpeg']
-TEXT_EXT = ['txt', 'log', 'err', 'out', 'json', 'csv', 'star', 'sh', 'out', 'err', 'bashrc']
+TEXT_EXT = ['txt', 'log', 'err', 'out', 'json', 'csv', 
+            'star', 'sh', 'out', 'err', 'bashrc',
+            'script', 'settings', 'job']
 
 
 class Path:
