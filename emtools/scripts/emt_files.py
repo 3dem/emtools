@@ -18,6 +18,7 @@
 import os
 import time
 import argparse
+import json
 from glob import glob
 from datetime import datetime, timedelta
 from pprint import pprint
@@ -25,6 +26,99 @@ import numpy as np
 
 from emtools.utils import Process, Color, Path, Timer, Pretty
 from emtools.metadata import EPU, MovieFiles
+
+
+def scan_folder(folder):
+    """Scan a folder; return (files_dict, dirs_set).
+    files_dict: relative_path -> {size, mtime}
+    dirs_set: set of relative directory paths (including '.' for the root).
+    """
+    folder = os.path.abspath(os.path.expanduser(folder))
+    if not os.path.isdir(folder):
+        raise SystemExit(f"ERROR: Not a directory: {folder}")
+    files_result = {}
+    dirs_set = set()
+    for root, _dirs, files in os.walk(folder):
+        rel_root = os.path.relpath(root, folder)
+        if rel_root == '.':
+            dirs_set.add('.')
+        else:
+            dirs_set.add(rel_root)
+        for fn in files:
+            path = os.path.join(root, fn)
+            try:
+                st = os.stat(path)
+            except OSError:
+                continue
+            rel = os.path.relpath(path, folder)
+            files_result[rel] = {'size': st.st_size, 'mtime': st.st_mtime}
+    return files_result, dirs_set
+
+
+def scan_save(folder, output_path):
+    """Scan folder and write snapshot to a JSON file."""
+    files_snapshot, dirs_set = scan_folder(folder)
+    folder_abs = os.path.abspath(os.path.expanduser(folder))
+    data = {
+        'folder': folder_abs,
+        'scanned_at': datetime.now().isoformat(),
+        'files': files_snapshot,
+        'dirs': sorted(dirs_set),
+    }
+    output_path = os.path.abspath(os.path.expanduser(output_path))
+    os.makedirs(os.path.dirname(output_path) or '.', exist_ok=True)
+    with open(output_path, 'w') as f:
+        json.dump(data, f, indent=2)
+    print(f"Scan saved: {len(files_snapshot)} files, {len(dirs_set)} dirs -> {output_path}")
+
+
+def scan_compare(folder, compare_path):
+    """Scan folder and compare to a previously saved JSON snapshot."""
+    folder_abs = os.path.abspath(os.path.expanduser(folder))
+    compare_path = os.path.abspath(os.path.expanduser(compare_path))
+    if not os.path.isfile(compare_path):
+        raise SystemExit(f"ERROR: Compare file not found: {compare_path}")
+
+    with open(compare_path) as f:
+        data = json.load(f)
+    previous_files = data.get('files', data) if 'files' in data else data
+    if isinstance(previous_files, dict) and not previous_files and 'files' in data:
+        previous_files = data['files']
+    previous_dirs = set(data.get('dirs', []))
+
+    current_files, current_dirs = scan_folder(folder)
+    prev_file_keys = set(previous_files)
+    curr_file_keys = set(current_files)
+
+    new_files = sorted(curr_file_keys - prev_file_keys)
+    deleted_files = sorted(prev_file_keys - curr_file_keys)
+    modified = []
+    for k in sorted(prev_file_keys & curr_file_keys):
+        p, c = previous_files[k], current_files[k]
+        if p.get('size') != c.get('size') or p.get('mtime') != c.get('mtime'):
+            modified.append(k)
+
+    new_dirs = sorted(current_dirs - previous_dirs)
+    deleted_dirs = sorted(previous_dirs - current_dirs)
+
+    def _report(label, items, color_fn=Color.red):
+        if not items:
+            return
+        print(color_fn(f"\n{label} ({len(items)}):"))
+        for rel in items:
+            print(f"  {rel}")
+
+    print(f"Comparison: current scan vs {compare_path}")
+    print(f"  Files: previous {len(prev_file_keys)}  |  current {len(curr_file_keys)}")
+    print(f"  Dirs:  previous {len(previous_dirs)}  |  current {len(current_dirs)}")
+    _report("New folders", new_dirs, Color.green)
+    _report("Deleted folders", deleted_dirs, Color.red)
+    _report("New files", new_files, Color.green)
+    _report("Deleted files", deleted_files, Color.red)
+    _report("Modified files", modified, Color.red if modified else lambda x: x)
+
+    if not new_files and not deleted_files and not modified and not new_dirs and not deleted_dirs:
+        print(Color.green("\nNo changes detected."))
 
 
 def statsDir(folder, sort):
@@ -171,7 +265,14 @@ def main():
     g.add_argument('--rsync_dirs', nargs=2, metavar=('DIR1', 'DIR2'),
                    help='Rsync both directories and print the number of '
                         'transferred files. ')
+    g.add_argument('--scan', metavar='FOLDER',
+                   help='Scan folder. Use with --output to save snapshot to JSON, '
+                        'or with --compare to diff against a saved snapshot.')
 
+    p.add_argument('--output', '-o', metavar='FILE',
+                   help='Save scan snapshot to this JSON file (with --scan)')
+    p.add_argument('--compare', '-c', metavar='FILE',
+                   help='Compare current scan to this JSON snapshot (with --scan)')
     p.add_argument('--bin', '-b', type=int, default=6000,
                    help="Create bins of the given time in minutes "
                         "(with --timing)")
@@ -243,6 +344,17 @@ def main():
 
     elif pattern := args.timing:
         timeStats(pattern, args.bin, args.plot, args.data)
+
+    elif folder := args.scan:
+        if args.output and args.compare:
+            p.error("--scan: use either --output or --compare, not both")
+        elif args.output:
+            scan_save(folder, args.output)
+        elif args.compare:
+            scan_compare(folder, args.compare)
+        else:
+            p.error("--scan requires either --output FILE (save snapshot) "
+                    "or --compare FILE (compare to snapshot)")
 
     # TODO: check from here
     elif args.transfer:
