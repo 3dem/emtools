@@ -41,7 +41,6 @@ class Thumbnail:
         self.min_max = kwargs.get('min_max', None)
         self.std_threshold = kwargs.get('std_threshold', 0)
 
-
     def __format(self, pil_img):
         format = self.output_format
 
@@ -135,8 +134,8 @@ class Thumbnail:
 
     @staticmethod
     def Micrograph(**kwargs):
-        """ Shortcut method with presets for Micrograph thumbail.
-        All settings can be overwriten with kwargs.
+        """ Shortcut method with presets for Micrograph thumbnail.
+        All settings can be overwritten with kwargs.
         """
         defaults = {
             'output_format': 'base64',
@@ -149,8 +148,8 @@ class Thumbnail:
 
     @staticmethod
     def Psd(**kwargs):
-        """ Shortcut method with presets for PSD thumbails.
-        All settings can be overwriten with kwargs.
+        """ Shortcut method with presets for PSD thumbnails.
+        All settings can be overwritten with kwargs.
         """
         defaults = {
             'output_format': 'base64',

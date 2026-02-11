@@ -46,6 +46,10 @@ class Args(dict):
         return ' '.join("%s %s" % (k, v) for k, v in self.items())
 
     @staticmethod
+    def fromString(string):
+        return Args.fromList(shlex.split(string))
+
+    @staticmethod
     def fromList(iterable):
         args = Args()
         for p in iterable:
