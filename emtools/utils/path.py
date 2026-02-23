@@ -32,9 +32,10 @@ from .color import Color
 GLOB_CHARS = ['*', '?', '[', ']']
 
 IMAGE_EXT = ['tiff', 'tif', 'png', 'jpg', 'jpeg']
+EM_EXT = ['mrc', 'mrcs', 'eer', 'gain']
 TEXT_EXT = ['txt', 'log', 'err', 'out', 'json', 'csv', 
             'star', 'sh', 'out', 'err', 'bashrc',
-            'script', 'settings', 'job']
+            'script', 'settings', 'job', 'tomostar']
 
 
 class Path:
@@ -279,6 +280,11 @@ class Path:
     @staticmethod
     def isText(path):
         return Path.getExt(path).lower()[1:] in TEXT_EXT
+
+    @staticmethod
+    def isEmImage(path):
+        return Path.getExt(path).lower()[1:] in EM_EXT
+
 
 
 class FolderManager:

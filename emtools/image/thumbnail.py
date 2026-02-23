@@ -14,6 +14,7 @@
 # *
 # **************************************************************************
 
+from doctest import OutputChecker
 import io
 import numpy as np
 import base64
@@ -22,6 +23,8 @@ import tifffile
 
 import PIL
 from PIL import Image
+
+from emtools.utils import Path, Pretty
 
 
 class Thumbnail:
@@ -158,6 +161,67 @@ class Thumbnail:
         }
         defaults.update(kwargs)
         return Thumbnail(**defaults)
+
+    @staticmethod
+    def Preview(imagePath, **kwargs):
+        imageLower = imagePath.lower()
+        thumb = Thumbnail.Micrograph(max_size=(256, 256))
+
+        if not (Path.isImage(imagePath) or Path.isEmImage(imagePath)):
+            raise Exception("Can not generate preview for: %s" % imagePath)
+
+        if Path.isImage(imagePath):
+            return thumb.from_path(imagePath)
+
+        if imageLower.endswith('.mrc'):
+            dims = Image.get_dimensions(imagePath)
+            mrc = mrcfile.open(imagePath, permissive=True)
+            thumb = Thumbnail.Micrograph()
+            if len(dims) == 2:
+                array = mrc.data 
+            elif len(dims) == 3:
+                x, y, z = dims
+                if mrc.is_volume() or (x == y and y == z):
+                    thumb = Thumbnail(max_size=(256, 256), output_format='base64')
+                    iMax = mrc.data.max()  # min(imean + 10 * isd, imageArray.max())
+                    iMin = mrc.data.min()  # max(imean - 10 * isd, imageArray.min())
+                    im255 = ((mrc.data - iMin) / (iMax - iMin) * 255).astype(np.uint8)
+
+                    # 1. Setup
+                    ximg = PIL.Image.fromarray(im255[:, :, x // 2])
+                    yimg = PIL.Image.fromarray(im255[:, y // 2, :])
+                    zimg = PIL.Image.fromarray(im255[z // 2, :, :])
+
+                    xw, xh = ximg.size
+                    yw, yh = yimg.size
+                    zw, zh = zimg.size
+
+                    pad = 2  # The thickness of the dark gray lines/borders
+
+                    # 2. Calculate canvas size for a full grid with outer borders
+                    # Total Width = (2 * image width) + (3 * padding for left, middle, right)
+                    canvas_w = (xw + yw) + (3 * pad)
+                    canvas_h = (xh + zh) + (3 * pad)
+
+                    # Create canvas with a white background (matching your image)
+                    bg_color = (256, 256, 256) 
+                    montage = PIL.Image.new('RGB', (canvas_w, canvas_h), bg_color)
+
+                    # Top-Left: x slice
+                    montage.paste(ximg, (pad, pad))                    
+                    # Bottom-Left: z slice
+                    montage.paste(zimg, (pad, xh + 2 * pad))
+                    # Bottom-Right: y slice
+                    montage.paste(yimg, (xw + 2 * pad, xh + 2 * pad))
+
+                    return thumb.from_pil(montage)
+                    Pretty.dprint("Loading MRC volume: %s" % str(array.shape))
+                else:
+                    array = mrc.data[z//2, :, :] # FIXME
+                    Pretty.dprint("Loading MRC 2D: %s" % str(array.shape))
+                return thumb.from_array(array)
+            else:
+                raise Exception("Invalid dimensions: %s" % dims)
 
 
 class Image:
