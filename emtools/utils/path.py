@@ -35,7 +35,8 @@ IMAGE_EXT = ['tiff', 'tif', 'png', 'jpg', 'jpeg']
 EM_EXT = ['mrc', 'mrcs', 'eer', 'gain']
 TEXT_EXT = ['txt', 'log', 'err', 'out', 'json', 'csv', 
             'star', 'sh', 'out', 'err', 'bashrc',
-            'script', 'settings', 'job', 'tomostar']
+            'script', 'settings', 'job', 'tomostar',
+            'population']
 
 
 class Path:

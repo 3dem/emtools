@@ -18,9 +18,10 @@ import os
 import pathlib
 from datetime import datetime, timedelta
 from glob import glob
+from readline import insert_text
 import xmltodict
 
-from emtools.utils import Path, Pretty, Process, Timer
+from emtools.utils import Path, Pretty, Color, Timer
 
 
 class Bins:
@@ -340,6 +341,49 @@ class WarpXml:
             d = d[k]
 
         return {e['@Name']: e['@Value'] for e in d}
+
+
+class WarpPopulation:
+    """ Helper class to read Warp's .population files. """
+    def __init__(self, populationFile):
+        with open(populationFile) as f:
+            xmlDict = xmltodict.parse(f.read())
+            self._data = xmlDict['Population']
+            self.Name = self._data['Param']['@Value']
+            self.LastRefinementOptions = {e['@Name']: e['@Value'] for e in self._data['LastRefinementOptions']['Param']}
+            print("\n>>>>>>> Sources\n")
+            self.Sources = self._parseList(self._data['Sources'], 'Source')
+            print("\n>>>>>>> SPECIES\n")
+            self.Species = self._parseList(self._data['Species'], 'Species')
+
+    def __repr__(self):
+        r = f"Population: {self.Name}\n"
+        r += f"   {Color.bold('Last Refinement Options:')}\n"
+        for k, v in self.LastRefinementOptions.items():
+            r += f"      {k:<30}:  {v:<}\n"
+        r += f"   {Color.green('Species:')}\n"
+        for s in self.Species:
+            r += f"      {s['name']:<30}:  {s['path']:<}\n"
+        r += f"   {Color.cyan('Sources:')}\n"
+        for s in self.Sources:
+            r += f"      {s['name']:<30}:  {s['path']:<}\n"
+        return r
+
+    def _parseList(self, data, key):
+        suffix = f".{key.lower()}"
+
+        def _parseItem(item):
+            p = item['@Path']
+            name = os.path.basename(p).replace(suffix, '')
+            return {'id': item['@GUID'], 'path': p, 'name': name}
+        
+        from pprint import pprint
+        d = data[key]
+
+        if isinstance(d, list):            
+            return [_parseItem(item) for item in d]
+        else:
+            return [_parseItem(d)]
 
 
 class Acquisition(dict):
