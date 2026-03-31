@@ -145,6 +145,14 @@ class StarFile(AbstractContextManager):
         with StarFile(starFileName) as sf:
             return sf.getTable(tableName, **kwargs)
 
+    @staticmethod
+    def getTablesDict(starFileName, **kwargs):
+        """ Shortcut to read all tables from file as a dictionary.
+        **kwargs are the same expected by getTable function.
+        """
+        with StarFile(starFileName) as sf:
+            return {table: sf.getTable(table, **kwargs) for table in sf.getTableNames()}
+
     def getTableSize(self, tableName):
         """
         Return the number of elements in the given table without parsing
