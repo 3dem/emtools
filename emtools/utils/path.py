@@ -315,6 +315,8 @@ class FolderManager:
 
     @path.setter
     def path(self, value):
+        if not isinstance(value, str):
+            raise Exception(f"FolderManger: Path must be a string, got {type(value)}")
         self.__path = value
 
     def clear(self):
