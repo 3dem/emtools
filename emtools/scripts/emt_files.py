@@ -268,6 +268,10 @@ def main():
     g.add_argument('--scan', metavar='FOLDER',
                    help='Scan folder. Use with --output to save snapshot to JSON, '
                         'or with --compare to diff against a saved snapshot.')
+    g.add_argument('--relink', nargs=2, metavar=('OLD_PREFIX', 'NEW_PREFIX'),
+                   help='Relink the symbolic links in the current directory, changing the prefix to the new one')
+    g.add_argument('--transfer', nargs=3, metavar=('FRAMES_DIR', 'RAW_DIR', 'EPU_DIR'),
+                   help='REVIEW: Transfer files from FRAMES_DIR to RAW_DIR and EPU_DIR')
 
     p.add_argument('--output', '-o', metavar='FILE',
                    help='Save scan snapshot to this JSON file (with --scan)')
@@ -287,6 +291,8 @@ def main():
     p.add_argument('--sort', choices=['count', 'size'],
                    help="Sort results from --stats with a folder"
                         "based on count or size (with --stats FOLDER)")
+    p.add_argument('--dry-run', action='store_true',
+                   help="Dry run, without actually performing the operation")
 
     args = p.parse_args()
 
@@ -397,15 +403,31 @@ def main():
 
         pprint(epuData.info())
 
-    elif args.parse:
-        ed = Path.ExtDict()
-        for root, dirs, files in os.walk(args.parse):
-            for f in files:
-                srcFn = os.path.join(root, f)
-                if os.path.isfile(srcFn):
-                    ed.register(os.path.join(root, f))
-        ed.print()
+    # elif args.parse:
+    #     ed = Path.ExtDict()
+    #     for root, dirs, files in os.walk(args.parse):
+    #         for f in files:
+    #             srcFn = os.path.join(root, f)
+    #             if os.path.isfile(srcFn):
+    #                 ed.register(os.path.join(root, f))
+    #     ed.print()
 
+    elif args.relink:
+        old_prefix, new_prefix = args.relink
+        cwd = os.getcwd()
+        print(f"Relinking files in {cwd} from {old_prefix} to {new_prefix}")
+        for fn in os.listdir(cwd):
+            filepath = os.path.join(cwd, fn)
+            if os.path.islink(filepath):
+                target = os.readlink(filepath)
+                if target.startswith(old_prefix):
+                    new_target = target.replace(old_prefix, new_prefix)
+                    print(f"LINK: {Color.bold(filepath)}\n"
+                          f" OLD: {Color.red(target)}\n"
+                          f" NEW: {Color.green(new_target)}")
+                    if not args.dry_run:
+                        os.unlink(filepath)
+                        os.symlink(new_target, filepath)
 
 if __name__ == '__main__':
     main()
