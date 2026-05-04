@@ -70,7 +70,7 @@ class Args(dict):
 
         return args
 
-    def subset(self, prefix, new_prefix='', filters=None):
+    def subset(self, prefix, new_prefix='', filters=None, inverted_booleans=[], possitive=[]):
         """ Return a new Args object with a subset of the keys.
         """
         filters = filters or []
@@ -82,18 +82,26 @@ class Args(dict):
         result = Args()
 
         for k, v in self.items():
+            k_suffix = k.replace(full_prefix, '')
+
             if _filter(k, v):
                 nk = k.replace(full_prefix, new_prefix)
 
                 if isinstance(v, bool):
                     if 'remove_false' in filters:
-                        if v:  
+                        add_boolean = not v if k_suffix in inverted_booleans else v
+                        if add_boolean:
                             result[nk] = ''
                     else:
                         result[nk] = v
                 else:
                     if v or 'remove_empty' not in filters:
-                        result[nk] = v
+                        if k_suffix in possitive:
+                            value = float(v)
+                            if value > 0:
+                                result[nk] = ''
+                        else:
+                            result[nk] = v
 
         return result
 
