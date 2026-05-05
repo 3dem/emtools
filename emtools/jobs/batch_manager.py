@@ -97,9 +97,8 @@ class Args(dict):
                 else:
                     if v or 'remove_empty' not in filters:
                         if k_suffix in possitive:
-                            value = float(v)
-                            if value > 0:
-                                result[nk] = ''
+                            if float(v) > 0:
+                                result[nk] = v
                         else:
                             result[nk] = v
 
