@@ -343,17 +343,25 @@ class WarpXml:
         return {e['@Name']: e['@Value'] for e in d}
 
 
+class WarpSpecies(dict):
+    """ Helper class to read Warp's .species files. """
+    def __init__(self, speciesFile):
+        with open(speciesFile) as f:
+            xmlDict = xmltodict.parse(f.read())
+            self._data = xmlDict['Species']
+            for item in self._data['Param']:
+                self[item['@Name']] = item['@Value']
+
 class WarpPopulation:
     """ Helper class to read Warp's .population files. """
     def __init__(self, populationFile):
+        self._filepath = populationFile
         with open(populationFile) as f:
             xmlDict = xmltodict.parse(f.read())
             self._data = xmlDict['Population']
             self.Name = self._data['Param']['@Value']
             self.LastRefinementOptions = {e['@Name']: e['@Value'] for e in self._data['LastRefinementOptions']['Param']}
-            print("\n>>>>>>> Sources\n")
             self.Sources = self._parseList(self._data['Sources'], 'Source')
-            print("\n>>>>>>> SPECIES\n")
             self.Species = self._parseList(self._data['Species'], 'Species')
 
     def __repr__(self):
@@ -384,6 +392,23 @@ class WarpPopulation:
             return [_parseItem(item) for item in d]
         else:
             return [_parseItem(d)]
+
+    def getSpecies(self, nameOrIndex):
+        entry = None
+        if isinstance(nameOrIndex, int):
+            entry = self.Species[nameOrIndex]
+        else:
+            for s in self.Species:
+                if s['name'] == nameOrIndex:
+                    entry = s
+                    break
+
+        if not entry:
+            raise Exception(f"Species {nameOrIndex} not found")
+
+        folder = os.path.dirname(self._filepath)
+
+        return WarpSpecies(os.path.join(folder, entry['path']))
 
 
 class Acquisition(dict):
