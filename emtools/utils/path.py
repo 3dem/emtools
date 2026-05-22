@@ -19,6 +19,7 @@ import shutil
 import time
 import tempfile
 import json
+import hashlib
 from glob import glob
 from datetime import datetime as dt
 from collections import OrderedDict
@@ -36,7 +37,7 @@ EM_EXT = ['mrc', 'mrcs', 'eer', 'gain']
 TEXT_EXT = ['txt', 'log', 'err', 'out', 'json', 'csv', 
             'star', 'sh', 'out', 'err', 'bashrc',
             'script', 'settings', 'job', 'tomostar',
-            'population']
+            'population', 'species']
 
 
 class Path:
@@ -137,7 +138,10 @@ class Path:
         def _value(line):
             # Get the value after the colon (:)
             # and remove , that is used to separate thousands
-            return int(line.split(':')[1].replace(',', ''))
+            v = line.split(':')[1].replace(',', '')
+            if ' ' in v:  # MacOS have a different rsync output format
+                v = v.strip().split()[0]
+            return int(v)
 
         transf = 0
         transfSize = 0
@@ -286,6 +290,44 @@ class Path:
     def isEmImage(path):
         return Path.getExt(path).lower()[1:] in EM_EXT
 
+    @staticmethod
+    def computeHashDict(path, verbose=False):
+        """ Get the hash of a file. """
+        import hashlib
+
+        result = {}
+
+        # Ensure the input path is absolute for consistent splitting
+        base_path = os.path.abspath(path)
+
+        for root, dirs, files in os.walk(base_path):
+            # 1. Handle folder entries (directories)
+            for dir_name in dirs:
+                dir_full_path = os.path.join(root, dir_name)
+                # Calculate path relative to the input folder
+                rel_dir_path = os.path.relpath(dir_full_path, base_path)
+                result[rel_dir_path] = ""
+
+            # 2. Handle file entries
+            for file_name in files:
+                file_full_path = os.path.join(root, file_name)
+                rel_file_path = os.path.relpath(file_full_path, base_path)
+
+                
+                    
+                # Calculate MD5 by reading the entire file into memory
+                try:
+                    if verbose:
+                        print(f"Computing hash for {rel_file_path}")
+                    with open(file_full_path, "rb") as f:
+                        file_bytes = f.read()  # Loads the whole file into RAM
+                    
+                    # Hash the complete byte string at once
+                    result[rel_file_path] = hashlib.md5(file_bytes).hexdigest()
+                except (PermissionError, FileNotFoundError):
+                    result[rel_file_path] = "ERROR: Cannot read file"
+
+        return result
 
 
 class FolderManager:
