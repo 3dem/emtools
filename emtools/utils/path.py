@@ -35,9 +35,9 @@ GLOB_CHARS = ['*', '?', '[', ']']
 IMAGE_EXT = ['tiff', 'tif', 'png', 'jpg', 'jpeg']
 EM_EXT = ['mrc', 'mrcs', 'eer', 'gain']
 TEXT_EXT = ['txt', 'log', 'err', 'out', 'json', 'csv', 
-            'star', 'sh', 'out', 'err', 'bashrc',
+            'star', 'sh', 'out', 'err', 'bashrc', 'xml',
             'script', 'settings', 'job', 'tomostar',
-            'population', 'species']
+            'population', 'species', 'aln', 'com', 'rawtlt']
 
 
 class Path:
@@ -313,8 +313,6 @@ class Path:
                 file_full_path = os.path.join(root, file_name)
                 rel_file_path = os.path.relpath(file_full_path, base_path)
 
-                
-                    
                 # Calculate MD5 by reading the entire file into memory
                 try:
                     if verbose:

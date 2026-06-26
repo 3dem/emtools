@@ -536,6 +536,14 @@ class RelionStar:
     TRUE_VALUES = ['Yes', 'True', 'true']
     FALSE_VALUES = ['No', 'False', 'false']
 
+    TOMO_ALIGNMENT_COLUMNS = [
+        "rlnTomoXTilt",
+        "rlnTomoYTilt",
+        "rlnTomoZRot",
+        "rlnTomoXShiftAngst",
+        "rlnTomoYShiftAngst"
+    ]
+
     @staticmethod
     def to_bool(strValue):
         """ Convert Relion Yes/No to True/False. """
