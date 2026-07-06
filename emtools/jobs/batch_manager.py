@@ -413,6 +413,7 @@ class TsStarBatchManager(BatchManager):
         """ Generate batches based on the input items. """
         for tsRow in self._itemsIterator:
             tsName = tsRow.rlnTomoName
+            tsMdoc = tsRow.rlnMdocFile
             with StarFile(tsRow.rlnTomoTiltSeriesStarFile) as sf:
                 items = [row._asdict() for row in sf.iterTable(tsName)]
-            yield self._createBatch(items, tsName=tsName)
+            yield self._createBatch(items, tsName=tsName, tsMdoc=tsMdoc)
