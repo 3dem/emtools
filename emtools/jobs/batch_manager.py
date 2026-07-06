@@ -88,12 +88,15 @@ class Args(dict):
                 nk = k.replace(full_prefix, new_prefix)
 
                 if isinstance(v, bool):
-                    if 'remove_false' in filters:
-                        add_boolean = not v if k_suffix in inverted_booleans else v
-                        if add_boolean:
-                            result[nk] = ''
+                    if 'binary_boolean' in filters:
+                        result[nk] = '1' if v else '0'
                     else:
-                        result[nk] = v
+                        if 'remove_false' in filters:
+                            add_boolean = not v if k_suffix in inverted_booleans else v
+                            if add_boolean:
+                                result[nk] = ''
+                        else:
+                            result[nk] = v
                 else:
                     if v or 'remove_empty' not in filters:
                         if k_suffix in possitive:
