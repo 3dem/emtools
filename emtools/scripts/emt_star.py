@@ -25,7 +25,7 @@ import numpy as np
 from collections import defaultdict
 
 from emtools.utils import Process, Color, Path, Timer, Pretty
-from emtools.metadata import StarFile
+from emtools.metadata import StarFile, Table
 
 
 def printStarInfo(starFile):
@@ -64,6 +64,28 @@ def checkDuplicates(inputStar, table, column):
 
     print(f">>> Duplicates: {len(duplicates)}\n"
           f"    {duplicates}")
+
+def printColumns(inputStar, tableName, columns):
+
+    if not os.path.exists(inputStar):
+        raise Exception(f"Input star file does not exist: {inputStar}")
+
+    with StarFile(inputStar) as sf:
+        existingTables = sf.getTableNames()
+        if tableName is None:
+            tableName = existingTables[0]
+        else:
+            if not tableName in existingTables:
+                raise Exception(f"Table name does not exist: {tableName}")
+
+    table = StarFile.getTableFromFile(tableName, inputStar)
+    columnList = columns.split()
+    newTable = Table(columns=[col for col in table.getColumns() if col.getName() in columnList])
+    for row in table:
+        values = {k: getattr(row, k) for k in columnList}
+        newTable.addRowValues(**values)
+
+    StarFile.printTable(newTable, tableName)
 
 
 def splitBy(starFile, column, minSize):
@@ -117,6 +139,9 @@ def main():
     p.add_argument('--duplicates', '-d', nargs=2,
                    metavar=('TABLE', 'COLUMN'),
                    help="Check duplicates values for a given label")
+    p.add_argument('--print', '-p', nargs='+',
+                   metavar=('COLUMNS', 'TABLE'),
+                   help="Print some columns from the given table.")
 
     args = p.parse_args()
     inputStar = args.input
@@ -131,6 +156,16 @@ def main():
     elif args.duplicates:
         table, column = args.duplicates
         checkDuplicates(inputStar, table, column)
+    elif args.print:
+        tableName = None
+        n = len(args.print)
+        cols = args.print[0]
+        if n > 2:
+            raise Exception(f"Only pass columns and optionally the tableName")
+        elif n > 1:  #  n == 2
+            tableName = args.print[1]
+
+        printColumns(args.input, tableName, cols)
     else:
         printStarInfo(args.input)
 

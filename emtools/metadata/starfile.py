@@ -29,8 +29,7 @@ from contextlib import AbstractContextManager
 from datetime import datetime, timedelta
 
 import emtools
-from emtools.utils import Pretty, Color
-
+from emtools.utils import Pretty, Color, Path
 
 from .table import ColumnList, Table
 from .misc import Acquisition
@@ -537,6 +536,14 @@ class RelionStar:
     TRUE_VALUES = ['Yes', 'True', 'true']
     FALSE_VALUES = ['No', 'False', 'false']
 
+    TOMO_ALIGNMENT_COLUMNS = [
+        "rlnTomoXTilt",
+        "rlnTomoYTilt",
+        "rlnTomoZRot",
+        "rlnTomoXShiftAngst",
+        "rlnTomoYShiftAngst"
+    ]
+
     @staticmethod
     def to_bool(strValue):
         """ Convert Relion Yes/No to True/False. """
@@ -776,7 +783,7 @@ class RelionStar:
 
             if tProc := _table('processes'):
                 for row in tProc:
-                    jobId = row.rlnPipeLineProcessName
+                    jobId = Path.rmslash(row.rlnPipeLineProcessName)
                     wf.registerJob(jobId,
                                    alias=row.rlnPipeLineProcessAlias,
                                    status=row.rlnPipeLineProcessStatusLabel,
@@ -791,13 +798,13 @@ class RelionStar:
 
             if tOutput := _table('output_edges'):
                 for row in tOutput:
-                    job = wf.getJob(row.rlnPipeLineEdgeProcess)
+                    job = wf.getJob(Path.rmslash(row.rlnPipeLineEdgeProcess))
                     nodeName = row.rlnPipeLineEdgeToNode
                     job.registerOutput(nodeName, datatype=nodes[nodeName])
 
             if tInput := _table('input_edges'):
                 for row in tInput:
-                    job = wf.getJob(row.rlnPipeLineEdgeProcess)
+                    job = wf.getJob(Path.rmslash(row.rlnPipeLineEdgeProcess))
                     if wf.hasData(row.rlnPipeLineEdgeFromNode):
                         job.addInputs([wf.getData(row.rlnPipeLineEdgeFromNode)])
                     else:
@@ -816,14 +823,14 @@ class RelionStar:
 
         for job in wf.jobs():
             tProc.addRowValues(
-                rlnPipeLineProcessName=job.id,
+                rlnPipeLineProcessName=Path.addslash(job.id),
                 rlnPipeLineProcessAlias=job['alias'],
                 rlnPipeLineProcessStatusLabel=job['status'],
                 rlnPipeLineProcessTypeLabel=job['jobtype']
             )
             for i in job.inputs:
                 tInput.addRowValues(
-                    rlnPipeLineEdgeProcess=job.id,
+                    rlnPipeLineEdgeProcess=Path.addslash(job.id),
                     rlnPipeLineEdgeFromNode=i.id
                 )
 
@@ -834,7 +841,7 @@ class RelionStar:
                     rlnPipeLineNodeTypeLabelDepth=1
                 )
                 tOutput.addRowValues(
-                    rlnPipeLineEdgeProcess=job.id,
+                    rlnPipeLineEdgeProcess=Path.addslash(job.id),
                     rlnPipeLineEdgeToNode=o.id
                 )
 
