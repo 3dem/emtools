@@ -36,7 +36,7 @@ IMAGE_EXT = ['tiff', 'tif', 'png', 'jpg', 'jpeg']
 EM_EXT = ['mrc', 'mrcs', 'eer', 'gain']
 TEXT_EXT = ['txt', 'log', 'err', 'out', 'json', 'csv', 
             'star', 'sh', 'out', 'err', 'bashrc', 'xml',
-            'script', 'settings', 'job', 'tomostar',
+            'script', 'settings', 'job', 'tomostar', 'mdoc',
             'population', 'species', 'aln', 'com', 'rawtlt']
 
 
