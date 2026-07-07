@@ -69,40 +69,48 @@ class Args(dict):
                 args[last_key] = v
 
         return args
-
-    def subset(self, prefix, new_prefix='', filters=None, inverted_booleans=[], possitive=[]):
-        """ Return a new Args object with a subset of the keys.
-        """
+    
+    def subset(self, prefix, new_prefix='', filters=None,
+           inverted_booleans=None, possitive=None, multiple_values=None):
+        """Return a new Args object with a subset of the keys."""
         filters = filters or []
+        inverted_booleans = inverted_booleans or []
+        possitive = possitive or []
+        multiple_values = multiple_values or []
+
         full_prefix = f'{prefix}.'
-
-        def _filter(k, v):
-            return k.startswith(full_prefix)
-
         result = Args()
 
         for k, v in self.items():
+            if not k.startswith(full_prefix):
+                continue
+
             k_suffix = k.replace(full_prefix, '')
+            nk = k.replace(full_prefix, new_prefix)
 
-            if _filter(k, v):
-                nk = k.replace(full_prefix, new_prefix)
-
-                if isinstance(v, bool):
-                    if 'binary_boolean' in filters:
-                        result[nk] = '1' if v else '0'
-                    elif 'remove_false' in filters:
-                        add_boolean = not v if k_suffix in inverted_booleans else v
-                        if add_boolean:
-                            result[nk] = ''
-                    else:
-                        result[nk] = v
+            if isinstance(v, bool):
+                if 'binary_boolean' in filters:
+                    result[nk] = '1' if v else '0'
+                elif 'remove_false' in filters:
+                    add_boolean = not v if k_suffix in inverted_booleans else v
+                    if add_boolean:
+                        result[nk] = ''
                 else:
-                    if v or 'remove_empty' not in filters:
-                        if k_suffix in possitive:
-                            if float(v) > 0:
-                                result[nk] = v
-                        else:
-                            result[nk] = v
+                    result[nk] = v
+
+                continue
+
+            if not v and 'remove_empty' in filters:
+                continue
+
+            if k_suffix in possitive and float(v) <= 0:
+                continue
+
+            if 'multiple_values' in filters and k_suffix in multiple_values:
+                tokens = str(v).split()
+                result[nk] = tokens if len(tokens) > 1 else v
+            else:
+                result[nk] = v
 
         return result
 
