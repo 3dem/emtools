@@ -120,6 +120,9 @@ class Workflow:
         def inputs(self):
             return self._inputs.values()
 
+        def getInput(self, inputId, default=None):
+            return self._inputs.get(inputId, default)
+
         def addInputs(self, inputs):
             if not inputs:
                 return
