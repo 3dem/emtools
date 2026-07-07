@@ -20,6 +20,7 @@ import subprocess
 import traceback
 import shlex
 import time
+import re
 from glob import glob
 from uuid import uuid4
 from datetime import datetime, timedelta
@@ -51,9 +52,13 @@ class Args(dict):
 
     @staticmethod
     def fromList(iterable):
+        r = re.compile(r"^-{1,2}[a-zA-Z][a-zA-Z0-9_-]+$")
+        def _is_arg(v):
+            return r.match(v) is not None
+
         args = Args()
         for p in iterable:
-            if p.startswith('--'):
+            if _is_arg(p):
                 last_key = p
                 args[p] = ''
             else:
