@@ -536,6 +536,15 @@ class RelionStar:
     TRUE_VALUES = ['Yes', 'True', 'true']
     FALSE_VALUES = ['No', 'False', 'false']
 
+    TOMO_FRAME_SERIES_COLUMNS = [
+        'rlnMicrographMovieName',
+        'rlnTomoTiltMovieFrameCount',
+        'rlnTomoNominalStageTiltAngle',
+        'rlnTomoNominalTiltAxisAngle',
+        'rlnMicrographPreExposure',
+        'rlnTomoNominalDefocus'
+    ]
+
     TOMO_ALIGNMENT_COLUMNS = [
         "rlnTomoXTilt",
         "rlnTomoYTilt",
@@ -651,17 +660,12 @@ class RelionStar:
 
     @staticmethod
     def tiltseries_table(mc=True, ctf=True, **kwargs):
-        cols = [
-            'rlnMicrographMovieName',
-            'rlnTomoTiltMovieFrameCount',
-            'rlnTomoNominalStageTiltAngle',
-            'rlnTomoNominalTiltAxisAngle',
-            'rlnMicrographPreExposure',
-            'rlnTomoNominalDefocus',
+        cols = list(RelionStar.TOMO_FRAME_SERIES_COLUMNS)
+        cols.extend([
+            'rlnMicrographName',
             'rlnMicrographNameEven',
-            'rlnMicrographNameOdd',
-            'rlnMicrographName'
-        ]
+            'rlnMicrographNameOdd'            
+        ])
 
         if mc:
             cols.extend([
