@@ -431,4 +431,4 @@ class TsStarBatchManager(BatchManager):
             tsMdoc = tsRow.rlnTomoMdocFile
             with StarFile(tsRow.rlnTomoTiltSeriesStarFile) as sf:
                 items = [row._asdict() for row in sf.iterTable(tsName)]
-            yield self._createBatch(items, tsName=tsName, tsMdoc=tsMdoc)
+            yield self._createBatch(items, tsName=tsName, tsMdoc=tsMdoc, rowDict=tsRow._asdict())
