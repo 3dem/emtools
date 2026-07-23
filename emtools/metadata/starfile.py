@@ -49,9 +49,12 @@ class StarFile(AbstractContextManager):
     _splitRegex = re.compile('\"[^"]*\"|[^"\s]+')
 
     @staticmethod
-    def printTable(table, tableName=''):
+    def printTable(table, tableName='',
+                   computeFormat=False,
+                   timeStamp=False):
         w = StarFile(sys.stdout, closeFile=False)
-        w.writeTable(tableName, table, singleRow=len(table) <= 1)
+        w.writeTable(tableName, table, singleRow=len(table) <= 1, 
+                     computeFormat=computeFormat, timeStamp=timeStamp)
 
     def __init__(self, inputFile, mode='r', **kwargs):
         """
@@ -371,8 +374,8 @@ class StarFile(AbstractContextManager):
         self._file.write("loop_\n")
         self._columns = table.getColumns()
         # Write column names
-        for col in self._columns:
-            self._file.write("_%s \n" % col.getName())
+        for i, col in enumerate(self._columns, start=1):
+            self._file.write(f"_{col.getName()}  # {i}\n")
 
     def writeRowValues(self, values):
         """ Write to file a line for these row values.

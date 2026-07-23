@@ -160,8 +160,25 @@ class Table(ColumnList):
 
     @staticmethod
     def fromDict(valuesDict):
-        t = Table(list(valuesDict.keys()))
-        t.addRowValues(**valuesDict)
+        """ Create a Table from a dictionary of values or a list of dictionaries.
+        If it is a list, all dictionaries must have the same keys.
+        
+        Args:
+            valuesDict: a dictionary of values or a list of dictionaries
+        Returns:
+            Table: a Table object
+        """
+        if isinstance(valuesDict, dict):
+            rows = [valuesDict]
+        elif isinstance(valuesDict, list):
+            rows = valuesDict
+        else:
+            raise ValueError(f"Invalid type {type(valuesDict)} for valuesDict")
+        
+        t = Table(list(rows[0].keys()))
+        for row in rows:
+            t.addRowValues(**row)
+
         return t
 
     def clear(self):
