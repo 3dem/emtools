@@ -825,11 +825,18 @@ class RelionStar:
         tOutput = tables['output_edges']
         tInput = tables['input_edges']
 
+        # There are some job'status that are not supported by Relion, so we need to map them to the expected values
+        status_map = {
+            'Launched': 'Scheduled',
+            'Saved': 'Scheduled'
+        }
+
         for job in wf.jobs():
+            status = status_map.get(job['status'], job['status'])
             tProc.addRowValues(
                 rlnPipeLineProcessName=Path.addslash(job.id),
                 rlnPipeLineProcessAlias=job['alias'],
-                rlnPipeLineProcessStatusLabel=job['status'],
+                rlnPipeLineProcessStatusLabel=status,
                 rlnPipeLineProcessTypeLabel=job['jobtype']
             )
             for i in job.inputs:
