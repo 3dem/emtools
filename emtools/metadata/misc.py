@@ -461,3 +461,29 @@ class Acquisition(dict):
     @total_dose.setter
     def total_dose(self, value):
         self['total_dose'] = float(value)
+
+
+class Imod:
+    @staticmethod
+    def get_angles_from_tlt(tltFile):
+        """ Read AreTomo3/IMOD file with tilt angles.
+
+        Expected file:
+            TS_NAME_Imod/TS_NAME_st.tlt
+        Returns:
+            list[float]: list of tilt angles (as floats) in the same order as in the input file.
+        """
+        return [float(line) for line in TextFile.stripLines(tltFile)]
+
+    @staticmethod
+    def get_alignment_from_xf(xfFile):
+        """ Read IMOD XF transformation matrices from .xf file.
+
+        Expected file:
+            TS_NAME_Imod/TS_NAME_st.xf
+        Each row contains:
+            A11 A12 A21 A22 DX DY
+        Returns:
+            list[list[float]]
+        """
+        return [list(map(float, line.split())) for line in TextFile.stripLines(xfFile)]
