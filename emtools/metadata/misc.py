@@ -299,14 +299,39 @@ class Mdoc(dict):
         subFramePath = section.get('SubFramePath', '')
         return pathlib.PureWindowsPath(subFramePath).parts[-1]
 
+    MDOC_DATE_FMTS = ('%d-%b-%Y  %H:%M:%S', '%d-%b-%y  %H:%M:%S')
+
+    @staticmethod
+    def parseDate(dateStr):
+        """ Parse an mdoc DateTime field (e.g. '31-Jul-19  17:20:05').
+
+        SerialEM used dd-Mon-yy before 4.1; yyyy since 4.1 (July 2022).
+        """
+        for fmt in Mdoc.MDOC_DATE_FMTS:
+            try:
+                return datetime.strptime(dateStr, fmt)
+            except ValueError:
+                continue
+        raise ValueError(f"Could not parse mdoc DateTime: {dateStr!r}")
+
     @property
     def zvalues(self):
-        return [(k, v) for k, v in self.zsections()]
+        """ Get the Z values from the mdoc file.
+        Returns:
+            list[tuple[str, dict]]: list of Z values with the section data
+        """
+        return list(self.zsections())
 
-    def zsections(self):
-        for k, v in self.items():
-            if k.startswith('ZValue'):
-                yield k, v
+    def zsections(self, sort=None):
+        """ Iterate over ZValue sections in the mdoc file.
+        Args:
+            sort: Use 'date' to sort by acquisition date (newest first).
+        """
+        sections = [(k, v) for k, v in self.items() if k.startswith('ZValue')]
+        if sort == 'date':
+            sections.sort(key=lambda x: Mdoc.parseDate(x[1]['DateTime']))
+        for k, v in sections:
+            yield k, v
 
     def write(self, path):
         with open(path, 'w') as f:
