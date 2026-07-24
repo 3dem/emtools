@@ -57,8 +57,7 @@ class Workflow:
         return job
 
     def deleteJob(self, job):
-        for o in job.outputs:
-            del self.data[o.id]
+        job.clearOutputs()
         del self._jobs[job.id]
 
     def dot(self):
@@ -138,6 +137,16 @@ class Workflow:
 
         def clearInputs(self):
             self._inputs = {}
+
+        def removeOutput(self, output_id):
+            if output_id in self._outputs:
+                if output_id in self.wf.data:
+                    del self.wf.data[output_id]
+                del self._outputs[output_id]
+
+        def clearOutputs(self):
+            for output_id in list(self._outputs.keys()):
+                self.removeOutput(output_id)
 
     class Data(dict):
         def __init__(self, parent, dataId, **kwargs):
