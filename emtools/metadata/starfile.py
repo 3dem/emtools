@@ -25,6 +25,7 @@ import os
 import sys
 import time
 import re
+import math
 from contextlib import AbstractContextManager
 from datetime import datetime, timedelta
 
@@ -375,7 +376,7 @@ class StarFile(AbstractContextManager):
         self._columns = table.getColumns()
         # Write column names
         for i, col in enumerate(self._columns, start=1):
-            self._file.write(f"_{col.getName()}  # {i}\n")
+            self._file.write(f"_{col.getName()}  #{i}\n")
 
     def writeRowValues(self, values):
         """ Write to file a line for these row values.
@@ -731,6 +732,61 @@ class RelionStar:
             cs=o['rlnSphericalAberration'],
             amplitude_contrast=o.get('rlnAmplitudeContrast', 0.1)
         )
+
+    @staticmethod
+    def alignment_from_xf(xf_row, pixel_size):
+        """Convert one IMOD XF row into Relion alignment labels.
+        IMOD XF row:
+            A11 A12 A21 A22 DX DY
+        The translation should be taken from the inverse transform, then
+        converted from pixels to Angstroms.
+        """
+        a11, a12, a21, a22, dx, dy = xf_row
+
+        det = a11 * a22 - a12 * a21
+        if abs(det) < 1e-12:
+            return {
+                'rlnTomoZRot': '',
+                'rlnTomoXShiftAngst': '',
+                'rlnTomoYShiftAngst': '',
+            }
+
+        z_rot = math.degrees(math.atan2(a12, a11))
+
+        # Inverse affine translation:
+        # inv(M) * -t
+        inv_dx = -((a22 * dx - a12 * dy) / det)
+        inv_dy = -((-a21 * dx + a11 * dy) / det)
+
+        return {
+            'rlnTomoZRot': z_rot,
+            'rlnTomoXShiftAngst': inv_dx * pixel_size,
+            'rlnTomoYShiftAngst': inv_dy * pixel_size,
+        }
+
+    @staticmethod
+    def alignments_from_imod(tlt_angles, xf_alignments, pixel_size):
+        """ Read tilt angles (.tlt file) and IMOD transforms (.xf file) to compute Relion alignments.
+        Returns:
+            list[dict]: list of Relion alignments
+        """
+        rln_alignments = []
+
+        for tilt, xf_row in zip(tlt_angles, xf_alignments):
+            xf_values = RelionStar.alignment_from_xf(xf_row, pixel_size)
+            ctf_scale = math.cos(math.radians(tilt))
+
+            rln_alignments.append({
+                'tilt': tilt,
+                'rlnTomoXTilt': 0.0 if tilt != '' else '',
+                'rlnTomoYTilt': tilt,
+                'rlnTomoZRot': xf_values.get('rlnTomoZRot', ''),
+                'rlnTomoXShiftAngst': xf_values.get('rlnTomoXShiftAngst', ''),
+                'rlnTomoYShiftAngst': xf_values.get('rlnTomoYShiftAngst', ''),
+                'rlnCtfScalefactor': ctf_scale,
+            })
+
+        return rln_alignments
 
     @staticmethod
     def pipeline_tables():
