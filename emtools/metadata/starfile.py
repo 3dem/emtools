@@ -584,6 +584,25 @@ class RelionStar:
         return v in RelionStar.FALSE_VALUES
 
     @staticmethod
+    def getTomoBinning(row):
+        return float(getattr(row, 'rlnTomoTomogramBinning', 1))
+
+    @staticmethod
+    def getTomoPixelSize(row):
+        """Compute the tomogram pixel size from TS pixel size and binning."""
+        return (float(getattr(row, 'rlnTomoTiltSeriesPixelSize', 0))
+                * RelionStar.getTomoBinning(row))
+
+    @staticmethod
+    def getTomogram(row):
+        """Return tomogram path, trying from different columns."""
+        cols = ['rlnTomoReconstructedTomogram', 'rlnTomoReconstructedTomogramDenoised']
+        for col in cols:
+            if value := row.get(col):
+                return value
+        raise ValueError(f"No tomogram column ({', '.join(cols)}) found in row: {row}")
+
+    @staticmethod
     def read_jobstar(jobStarFile):
         tValues = StarFile.getTableFromFile('joboptions_values',
                                             jobStarFile,
