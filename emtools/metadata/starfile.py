@@ -594,6 +594,17 @@ class RelionStar:
                 * RelionStar.getTomoBinning(row))
 
     @staticmethod
+    def reconstructedTomoSize(row, axis):
+        """Return reconstructed tomogram size in pixels along X/Y/Z."""
+        return float(getattr(row, axis)) / RelionStar.getTomoBinning(row)
+
+    @staticmethod
+    def centeredAngstToPixel(centered_angst, row, axis):
+        """Convert Relion centered Angstrom coordinates to tomogram pixels."""
+        return (float(centered_angst) / RelionStar.getTomoPixelSize(row)
+                + RelionStar.reconstructedTomoSize(row, axis) / 2)
+
+    @staticmethod
     def getTomogram(row):
         """Return tomogram path, trying from different columns."""
         cols = ['rlnTomoReconstructedTomogram', 'rlnTomoReconstructedTomogramDenoised']
