@@ -795,6 +795,72 @@ class RelionStar:
         }
 
     @staticmethod
+    def alignment_to_xf(alignment, pixel_size):
+        """Convert one RELION alignment row into an AreTomo/IMOD XF row.
+
+        The AreTomo XF convention used here stores:
+
+            A11 A12 A21 A22 DX DY
+
+        Matrix coefficients are rounded to three decimals before computing
+        DX and DY. Translations are then rounded to two decimals. This is
+        required to reverse the existing XF-to-RELION conversion exactly
+        for AreTomo's rounded rigid transforms.
+        """
+        if pixel_size <= 0:
+            raise ValueError(
+                f"Alignment pixel size must be greater than zero: {pixel_size}"
+            )
+
+        def _get_value(name):
+            if isinstance(alignment, dict):
+                value = alignment.get(name)
+            else:
+                value = getattr(alignment, name, None)
+
+            if value in (None, ''):
+                raise ValueError(f"Missing RELION alignment value: {name}")
+
+            return float(value)
+
+        z_rot = _get_value('rlnTomoZRot')
+
+        shift_x_pixels = (
+            _get_value('rlnTomoXShiftAngst') / pixel_size
+        )
+        shift_y_pixels = (
+            _get_value('rlnTomoYShiftAngst') / pixel_size
+        )
+
+        angle = math.radians(z_rot)
+
+        # Important: AreTomo writes the matrix coefficients with three
+        # decimals. Round them before reconstructing the translation.
+        a11 = float(f'{math.cos(angle):.3f}')
+        a12 = float(f'{math.sin(angle):.3f}')
+        a21 = float(f'{-math.sin(angle):.3f}')
+        a22 = float(f'{math.cos(angle):.3f}')
+
+        # Existing forward conversion:
+        #     relion_shift = -inverse(M) @ imod_translation
+        # Therefore:
+        #     imod_translation = -M @ relion_shift
+        dx = -(a11 * shift_x_pixels + a12 * shift_y_pixels)
+        dy = -(a21 * shift_x_pixels + a22 * shift_y_pixels)
+
+        # AreTomo writes translations with two decimals.
+        dx = float(f'{dx:.2f}')
+        dy = float(f'{dy:.2f}')
+
+        # Avoid writing "-0.00".
+        if dx == 0:
+            dx = 0.0
+        if dy == 0:
+            dy = 0.0
+
+        return [a11, a12, a21, a22, dx, dy]
+
+    @staticmethod
     def alignments_from_imod(tlt_angles, xf_alignments, pixel_size):
         """ Read tilt angles (.tlt file) and IMOD transforms (.xf file) to compute Relion alignments.
         Returns:
