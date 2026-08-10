@@ -24,7 +24,7 @@ from pprint import pprint
 from datetime import datetime
 
 from emtools.utils import Timer, Color, Pretty
-from emtools.metadata import StarFile, SqliteFile, EPU, StarMonitor
+from emtools.metadata import StarFile, SqliteFile, EPU, StarMonitor, RelionStar, Table
 from emtools.jobs import BatchManager
 from emtools.tests import testpath
 
@@ -372,6 +372,74 @@ class TestStarFile(unittest.TestCase):
 
         #self.__test_star_streaming(_pipeline, inputStreaming=True)
         self.__test_star_streaming(_pipeline, inputStreaming=False)
+
+
+class TestRelionStarTomo(unittest.TestCase):
+    """Tests for Relion tomography STAR file validation helpers."""
+
+    def _write_star(self, tables):
+        ftmp = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.star')
+        with StarFile(ftmp.name, 'w') as sf:
+            for table_name, table in tables.items():
+                sf.writeTable(table_name, table, timeStamp=False, singleRow=len(table) <= 1)
+        ftmp.close()
+        return ftmp.name
+
+    def test_isTomoOptimisationSet(self):
+        opt_star = self._write_star({
+            'optimisation_set': Table.fromDict({
+                'rlnTomoParticlesFile': 'particles.star',
+                'rlnTomoTomogramsFile': 'tomograms.star',
+            }),
+        })
+        wrong_table = self._write_star({
+            'global': Table.fromDict({'rlnTomoName': 'tomo1'}),
+        })
+        missing_link = self._write_star({
+            'optimisation_set': Table.fromDict({'rlnTomoTomogramsFile': 'tomograms.star'}),
+        })
+
+        self.assertTrue(RelionStar.isTomoOptimisationSet(opt_star))
+        self.assertFalse(RelionStar.isTomoOptimisationSet(wrong_table))
+        self.assertFalse(RelionStar.isTomoOptimisationSet(missing_link))
+        self.assertFalse(RelionStar.isTomoOptimisationSet(__file__))
+
+        row = RelionStar.readTomoOptimisationSet(opt_star)[0]
+        self.assertEqual(row.rlnTomoParticlesFile, 'particles.star')
+
+        for fn in (opt_star, wrong_table, missing_link):
+            os.unlink(fn)
+
+    def test_isTomoParticles(self):
+        particles_star = self._write_star({
+            'particles': Table.fromDict({
+                'rlnTomoName': 'tomo1',
+                'rlnCoordinateX': 1.0,
+                'rlnCoordinateY': 2.0,
+                'rlnCoordinateZ': 3.0,
+            }),
+        })
+        centered_star = self._write_star({
+            'particles': Table.fromDict({
+                'rlnTomoName': 'tomo1',
+                'rlnCenteredCoordinateXAngst': 10.0,
+                'rlnCenteredCoordinateYAngst': 20.0,
+                'rlnCenteredCoordinateZAngst': 30.0,
+            }),
+        })
+        missing_coords = self._write_star({
+            'particles': Table.fromDict({'rlnTomoName': 'tomo1'}),
+        })
+
+        self.assertTrue(RelionStar.isTomoParticles(particles_star))
+        self.assertTrue(RelionStar.isTomoParticles(centered_star))
+        self.assertFalse(RelionStar.isTomoParticles(missing_coords))
+
+        table = RelionStar.readTomoParticles(particles_star)
+        self.assertEqual(table[0].rlnTomoName, 'tomo1')
+
+        for fn in (particles_star, centered_star, missing_coords):
+            os.unlink(fn)
 
 
 class TestEPU(unittest.TestCase):
