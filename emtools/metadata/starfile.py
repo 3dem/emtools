@@ -589,19 +589,9 @@ class RelionStar:
     @staticmethod
     def isTomoOptimisationSet(starFile):
         """Return True if the STAR file has a compliant optimisation_set table."""
-        if not starFile or not os.path.isfile(starFile):
-            return False
         try:
-            with StarFile(starFile) as sf:
-                if RelionStar.TOMO_OPTIMISATION_SET_TABLE not in sf.getTableNames():
-                    return False
-                if sf.getTableSize(RelionStar.TOMO_OPTIMISATION_SET_TABLE) < 1:
-                    return False
-                table = sf.getTableInfo(RelionStar.TOMO_OPTIMISATION_SET_TABLE)
-                return (
-                    table is not None
-                    and table.hasAllColumns(RelionStar.TOMO_OPTIMISATION_SET_COLUMNS)
-                )
+            RelionStar.readTomoOptimisationSet(starFile)
+            return True
         except (OSError, IOError, Exception):
             return False
 
@@ -628,18 +618,16 @@ class RelionStar:
     @staticmethod
     def readTomoOptimisationSet(starFile):
         """Read the optimisation_set table or raise ValueError."""
-        if not RelionStar.isTomoOptimisationSet(starFile):
+        if not starFile or not os.path.isfile(starFile):
+            raise ValueError(f"Invalid STAR file: {starFile}")
+        all_tables = StarFile.getTablesDict(starFile)
+        first_table = next(iter(all_tables.values()))
+
+        if not first_table.hasAllColumns(RelionStar.TOMO_OPTIMISATION_SET_COLUMNS):
             raise ValueError(
                 f"{starFile} is not a compliant tomography optimisation_set STAR file."
             )
-        table = StarFile.getTableFromFile(
-            RelionStar.TOMO_OPTIMISATION_SET_TABLE, starFile)
-        if not table:
-            raise ValueError(
-                f"Could not read '{RelionStar.TOMO_OPTIMISATION_SET_TABLE}' "
-                f"table from {starFile}."
-            )
-        return table
+        return first_table
 
     @staticmethod
     def readTomoParticles(starFile):
