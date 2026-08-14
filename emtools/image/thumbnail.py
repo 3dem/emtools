@@ -305,7 +305,8 @@ class Image:
                     }
                 if len(dims) == 3:
                     x, y, third = dims
-                    data_type = Image._mrc_data_type(mrc, imageLower)
+                    is_cube = x == y == third
+                    data_type = '3D volume' if is_cube else Image._mrc_data_type(mrc, imageLower)
                     if data_type == '3D volume':
                         return {
                             'dataType': data_type,
