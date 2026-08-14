@@ -16,6 +16,7 @@
 # **************************************************************************
 
 import os
+import sys
 import time
 import argparse
 from glob import glob
@@ -26,6 +27,161 @@ from collections import defaultdict
 
 from emtools.utils import Process, Color, Path, Timer, Pretty
 from emtools.metadata import StarFile, Table
+
+
+ALL_TABLES = 'all'
+OP_DROP = 'DROP'
+OP_UPDATE = 'UPDATE'
+OP_FILTER = 'FILTER'
+VALID_OPERATIONS = {OP_DROP, OP_UPDATE, OP_FILTER}
+
+
+def _normalizeOperation(op):
+    op = op.strip().upper()
+    if op not in VALID_OPERATIONS:
+        raise ValueError(
+            f"Unknown operation '{op}'. Valid values: {', '.join(sorted(VALID_OPERATIONS))}")
+    return op
+
+
+def _resolveTableName(table, tableNames):
+    """Resolve table name; only the special 'all' token is case-insensitive."""
+    table = table.strip()
+    if table.lower() == ALL_TABLES:
+        return ALL_TABLES
+    if table not in tableNames:
+        raise ValueError(f"Table '{table}' not found in input STAR file")
+    return table
+
+
+def _parseOperateArgs(operateArgs):
+    """Flatten --operate argument groups into (TABLE, OPERATION, EXPR) tuples."""
+    operations = []
+    for group in operateArgs:
+        if len(group) % 3 != 0:
+            raise ValueError(
+                "--operate expects groups of TABLE OPERATION EXPR "
+                f"(multiple of 3 arguments), got {len(group)} in one --operate")
+        for i in range(0, len(group), 3):
+            operations.append((group[i], group[i + 1], group[i + 2]))
+    return operations
+
+
+def _parseOperateActions(operations, tableNames):
+    """Build per-table action lists and the set of tables to drop."""
+    explicitTables = set()
+    dropTables = set()
+    tableActions = defaultdict(list)
+    allActions = []
+    allDrop = False
+
+    for table, operation, expr in operations:
+        tableName = _resolveTableName(table, tableNames)
+        operation = _normalizeOperation(operation)
+
+        if tableName == ALL_TABLES:
+            if operation == OP_DROP:
+                allDrop = True
+            else:
+                allActions.append((operation, expr))
+            continue
+
+        explicitTables.add(tableName)
+
+        if operation == OP_DROP:
+            dropTables.add(tableName)
+        else:
+            tableActions[tableName].append((operation, expr))
+
+    if allDrop:
+        for tableName in tableNames:
+            if tableName not in explicitTables:
+                dropTables.add(tableName)
+
+    return explicitTables, dropTables, tableActions, allActions
+
+
+def _iterTableRows(sf, tableName, subset=None):
+    kwargs = {'limit': subset} if subset is not None else {}
+    return list(sf.iterTable(tableName, **kwargs))
+
+
+def _writeProcessedTable(sfOut, tableName, tableInfo, rows, singleRow):
+    if not rows:
+        sfOut.writeTable(tableName, tableInfo)
+        return
+
+    if singleRow:
+        sfOut.writeSingleRow(tableName, rows[0])
+    else:
+        result = tableInfo.cloneColumns()
+        for row in rows:
+            result.addRow(row)
+        sfOut.writeTable(tableName, result)
+
+
+def _writeUnchangedTable(sfIn, sfOut, tableName, subset=None):
+    sfIn.getTableInfo(tableName)
+    singleRow = sfIn._singleRow
+    rows = _iterTableRows(sfIn, tableName, subset=subset)
+    tableInfo = sfIn.getTableInfo(tableName)
+    _writeProcessedTable(sfOut, tableName, tableInfo, rows, singleRow)
+
+
+def _processTable(sf, tableName, actions, subset=None):
+    tableInfo = sf.getTableInfo(tableName)
+    singleRow = sf._singleRow
+    table = tableInfo.cloneColumns()
+    kwargs = {'limit': subset} if subset is not None else {}
+    for row in sf.iterTable(tableName, **kwargs):
+        table.addRow(row)
+
+    for operation, expr in actions:
+        if operation == OP_UPDATE:
+            table.update(expr)
+        elif operation == OP_FILTER:
+            table.filter(expr)
+
+    return tableInfo, list(table), singleRow
+
+
+def operateStarFile(inputStar, operations, subset=None, output=None):
+    if not operations:
+        raise ValueError("At least one --operate action is required")
+
+    if not os.path.exists(inputStar):
+        raise FileNotFoundError(f"Input star file does not exist: {inputStar}")
+
+    closeOutput = output is not None
+    out = open(output, 'w') if closeOutput else sys.stdout
+
+    try:
+        with StarFile(inputStar) as sfIn:
+            tableNames = sfIn.getTableNames()
+            explicitTables, dropTables, tableActions, allActions = (
+                _parseOperateActions(operations, tableNames))
+
+            with StarFile(out, closeFile=closeOutput) as sfOut:
+                sfOut.writeTimeStamp()
+
+                for tableName in tableNames:
+                    if tableName in dropTables:
+                        continue
+
+                    if tableName in explicitTables:
+                        actions = tableActions.get(tableName, [])
+                    else:
+                        actions = list(allActions)
+
+                    if not actions:
+                        _writeUnchangedTable(sfIn, sfOut, tableName, subset=subset)
+                    else:
+                        tableInfo, rows, singleRow = _processTable(
+                            sfIn, tableName, actions, subset=subset)
+                        _writeProcessedTable(sfOut, tableName, tableInfo, rows, singleRow)
+    finally:
+        if closeOutput:
+            out.close()
 
 
 def printStarInfo(starFile):
@@ -65,27 +221,45 @@ def checkDuplicates(inputStar, table, column):
     print(f">>> Duplicates: {len(duplicates)}\n"
           f"    {duplicates}")
 
-def printColumns(inputStar, tableName, columns):
-
+def printColumns(inputStar, tableName=None, columns=None, subset=None):
     if not os.path.exists(inputStar):
-        raise Exception(f"Input star file does not exist: {inputStar}")
+        raise FileNotFoundError(f"Input star file does not exist: {inputStar}")
 
     with StarFile(inputStar) as sf:
         existingTables = sf.getTableNames()
         if tableName is None:
+            if not existingTables:
+                return
             tableName = existingTables[0]
-        else:
-            if not tableName in existingTables:
-                raise Exception(f"Table name does not exist: {tableName}")
+        elif tableName not in existingTables:
+            raise ValueError(f"Table name does not exist: {tableName}")
 
-    table = StarFile.getTableFromFile(tableName, inputStar)
-    columnList = columns.split()
-    newTable = Table(columns=[col for col in table.getColumns() if col.getName() in columnList])
-    for row in table:
+        columnList = columns.split() if columns else sf.getTableInfo(tableName).getColumnNames()
+        table = _buildPrintTable(sf, tableName, columnList, subset=subset)
+        StarFile.printTable(table, tableName)
+
+
+def printAllTables(inputStar, subset=None):
+    if not os.path.exists(inputStar):
+        raise FileNotFoundError(f"Input star file does not exist: {inputStar}")
+
+    with StarFile(inputStar) as sf:
+        for tableName in sf.getTableNames():
+            tableInfo = sf.getTableInfo(tableName)
+            table = _buildPrintTable(sf, tableName, tableInfo.getColumnNames(),
+                                     subset=subset)
+            StarFile.printTable(table, tableName)
+
+
+def _buildPrintTable(sf, tableName, columnList, subset=None):
+    tableInfo = sf.getTableInfo(tableName)
+    cols = [col for col in tableInfo.getColumns() if col.getName() in columnList]
+    newTable = Table(columns=cols)
+    kwargs = {'limit': subset} if subset is not None else {}
+    for row in sf.iterTable(tableName, **kwargs):
         values = {k: getattr(row, k) for k in columnList}
         newTable.addRowValues(**values)
-
-    StarFile.printTable(newTable, tableName)
+    return newTable
 
 
 def splitBy(starFile, column, minSize):
@@ -139,14 +313,35 @@ def main():
     p.add_argument('--duplicates', '-d', nargs=2,
                    metavar=('TABLE', 'COLUMN'),
                    help="Check duplicates values for a given label")
-    p.add_argument('--print', '-p', nargs='+',
-                   metavar=('COLUMNS', 'TABLE'),
-                   help="Print some columns from the given table.")
+    outputMode = p.add_mutually_exclusive_group()
+    outputMode.add_argument('--print', '-p', nargs='*',
+                            metavar=('COLUMNS', 'TABLE'),
+                            help="Print columns from STAR file tables to stdout. "
+                                 "With no arguments, print all tables and all columns. "
+                                 "With COLUMNS only, print from the first table. "
+                                 "With COLUMNS and TABLE, print from the given table.")
+    outputMode.add_argument('--operate', '-e', action='append', nargs='+',
+                            metavar='TRIPLET',
+                            help="Apply one or more operations. Each operation is a triplet "
+                                 "TABLE OPERATION EXPR; multiple triplets can be passed in a "
+                                 "single --operate. TABLE is the exact table name from the "
+                                 "input STAR file, or 'all' (case insensitive) for all tables "
+                                 "not explicitly listed in other operations. OPERATION can be "
+                                 "UPDATE, FILTER, or DROP. For UPDATE, EXPR is comma-separated "
+                                 "column=expression assignments. For FILTER, EXPR is a boolean "
+                                 "expression per row. For DROP, EXPR is ignored.")
+    p.add_argument('--subset', '-n', type=int, default=None, metavar='N',
+                   help="Process at most N rows per table (for debugging)")
+    p.add_argument('--output', '-o', default=None, metavar='FILE',
+                   help="Write output STAR file to this path (default: stdout)")
 
     args = p.parse_args()
     inputStar = args.input
 
-    if args.group_by:
+    if args.operate:
+        operateStarFile(inputStar, _parseOperateArgs(args.operate),
+                        subset=args.subset, output=args.output)
+    elif args.group_by:
         table, column = args.group_by
         groupBy(inputStar, table, column)
     elif split := args.split_particles:
@@ -156,16 +351,18 @@ def main():
     elif args.duplicates:
         table, column = args.duplicates
         checkDuplicates(inputStar, table, column)
-    elif args.print:
-        tableName = None
-        n = len(args.print)
-        cols = args.print[0]
-        if n > 2:
-            raise Exception(f"Only pass columns and optionally the tableName")
-        elif n > 1:  #  n == 2
-            tableName = args.print[1]
+    elif args.print is not None:
+        if len(args.print) == 0:
+            printAllTables(inputStar, subset=args.subset)
+        else:
+            tableName = None
+            cols = args.print[0]
+            if len(args.print) > 2:
+                raise ValueError("Only pass columns and optionally the table name")
+            elif len(args.print) > 1:
+                tableName = args.print[1]
 
-        printColumns(args.input, tableName, cols)
+            printColumns(inputStar, tableName, cols, subset=args.subset)
     else:
         printStarInfo(args.input)
 

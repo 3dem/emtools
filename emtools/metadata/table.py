@@ -23,6 +23,7 @@ __author__ = 'Jose Miguel de la Rosa Trevin, Grigory Sharov'
 
 
 from collections import OrderedDict, namedtuple
+import re
 
 
 class Column:
@@ -300,6 +301,51 @@ class Table(ColumnList):
             return getattr(r, key) if isinstance(key, str) else key
         self._rows.sort(key=keyFunc, reverse=reverse)
 
+    def update(self, spec):
+        """Update column values from a comma-separated spec of col=expr assignments.
+
+        Each assignment must contain exactly one '=' character. Expressions are
+        evaluated per row using column names as variables.
+
+        Args:
+            spec: Comma-separated column=expression pairs, e.g.
+                'rlnPixelSize=rlnOriginalPixelSize/2, rlnOpticsGroup=1'
+
+        Returns:
+            self, to allow method chaining.
+        """
+        updates = _parseUpdateSpec(spec)
+        colNames = self.getColumnNames()
+        for col, _ in updates:
+            if col not in colNames:
+                raise ValueError(f"Column '{col}' not found in table")
+
+        newRows = []
+        for row in self._rows:
+            values = row._asdict()
+            for col, expr in updates:
+                values[col] = _evalRowExpr(expr, row, values=values)
+            newRows.append(self.Row(**values))
+        self._rows = newRows
+        return self
+
+    def filter(self, spec):
+        """Keep rows where the expression evaluates to True.
+
+        Args:
+            spec: Boolean expression evaluated per row using column names
+                as variables, e.g. 'rlnOpticsGroup == 1'
+
+        Returns:
+            self, to allow method chaining.
+        """
+        spec = spec.strip()
+        if not spec:
+            raise ValueError("FILTER requires a non-empty expression")
+        _validateFilterSpec(spec)
+        self._rows = [row for row in self._rows if _evalRowExpr(spec, row)]
+        return self
+
     def print(self, formatStr=None):
         for row in self._rows:
             print(formatStr.format(**row._asdict()))
@@ -318,6 +364,48 @@ class Table(ColumnList):
 
 
 # --------- Helper functions  ------------------------
+def _parseUpdateSpec(spec):
+    """Parse 'col1=expr1, col2=expr2' into a list of (column, expression) pairs."""
+    spec = spec.strip()
+    if not spec:
+        raise ValueError("UPDATE requires a non-empty expression spec")
+
+    updates = []
+    for part in spec.split(','):
+        part = part.strip()
+        if not part:
+            continue
+        if part.count('=') != 1:
+            raise ValueError(
+                f"Invalid UPDATE spec (expected exactly one '=' per column): {part}")
+        col, expr = part.split('=', 1)
+        col = col.strip()
+        expr = expr.strip()
+        if not col:
+            raise ValueError(f"Invalid UPDATE spec (empty column name): {part}")
+        if not expr:
+            raise ValueError(f"Invalid UPDATE spec (empty expression): {part}")
+        updates.append((col, expr))
+
+    if not updates:
+        raise ValueError("UPDATE requires at least one column assignment")
+    return updates
+
+
+def _validateFilterSpec(spec):
+    """Reject bare column names that often mean the shell ate a comparison."""
+    if re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', spec):
+        raise ValueError(
+            f"FILTER expression '{spec}' looks like a column name only. "
+            "Quote the expression in the shell, e.g. 'rlnDefocusAngle > 50'")
+
+
+def _evalRowExpr(expr, row, values=None):
+    """Evaluate an expression using row column values as variables."""
+    namespace = dict(values if values is not None else row._asdict())
+    return eval(expr, {"__builtins__": {}}, namespace)
+
+
 def _str(s):
     """ Get the string value but stripping quotes if present. """
     return s[1:-1] if s.startswith('"') and s.endswith('"') else s

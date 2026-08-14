@@ -374,6 +374,101 @@ class TestStarFile(unittest.TestCase):
         self.__test_star_streaming(_pipeline, inputStreaming=False)
 
 
+class TestTable(unittest.TestCase):
+    """Tests for Table.update and Table.filter."""
+
+    @staticmethod
+    def _sampleTable():
+        t = Table(['rlnA', 'rlnB', 'rlnStatus'])
+        t.addRowValues(1, 10, 'Scheduled')
+        t.addRowValues(2, 20, 'Scheduled')
+        t.addRowValues(3, 30, 'Finished')
+        return t
+
+    def test_update_constant(self):
+        t = self._sampleTable()
+        t.update('rlnB=100')
+        self.assertEqual(t.size(), 3)
+        for row in t:
+            self.assertEqual(row.rlnB, 100)
+
+    def test_update_from_column_expression(self):
+        t = self._sampleTable()
+        t.update('rlnB = rlnA * 10')
+        self.assertEqual(t[0].rlnB, 10)
+        self.assertEqual(t[1].rlnB, 20)
+        self.assertEqual(t[2].rlnB, 30)
+
+    def test_update_multiple_columns(self):
+        t = self._sampleTable()
+        t.update('rlnB = rlnA * 10, rlnStatus = "Updated"')
+        self.assertEqual(t[0].rlnB, 10)
+        self.assertEqual(t[0].rlnStatus, 'Updated')
+        self.assertEqual(t[2].rlnB, 30)
+
+    def test_update_later_assignments_see_earlier_updates(self):
+        t = Table(['rlnA', 'rlnB', 'rlnC'])
+        t.addRowValues(2, 0, 0)
+        t.update('rlnB = rlnA * 10, rlnC = rlnB + 1')
+        self.assertEqual(t[0].rlnB, 20)
+        self.assertEqual(t[0].rlnC, 21)
+
+    def test_update_whitespace_in_spec(self):
+        t = self._sampleTable()
+        t.update('  rlnB = rlnA * 10 ,  rlnStatus = "Updated"  ')
+        self.assertEqual(t[1].rlnB, 20)
+        self.assertEqual(t[1].rlnStatus, 'Updated')
+
+    def test_update_returns_self(self):
+        t = self._sampleTable()
+        self.assertIs(t.update('rlnB=0'), t)
+
+    def test_update_raises_on_invalid_spec(self):
+        t = self._sampleTable()
+        for spec in ['', 'rlnB', 'rlnB=1=2', 'rlnB==1']:
+            with self.subTest(spec=spec):
+                with self.assertRaises(ValueError):
+                    t.update(spec)
+
+    def test_update_raises_on_unknown_column(self):
+        t = self._sampleTable()
+        with self.assertRaisesRegex(ValueError, "not found"):
+            t.update('missingCol=1')
+
+    def test_filter_by_numeric_condition(self):
+        t = self._sampleTable()
+        t.filter('rlnA > 1')
+        self.assertEqual(t.size(), 2)
+        self.assertEqual([row.rlnA for row in t], [2, 3])
+
+    def test_filter_by_string_condition(self):
+        t = self._sampleTable()
+        t.filter('rlnStatus == "Scheduled"')
+        self.assertEqual(t.size(), 2)
+        self.assertTrue(all(row.rlnStatus == 'Scheduled' for row in t))
+
+    def test_filter_returns_self(self):
+        t = self._sampleTable()
+        self.assertIs(t.filter('rlnA > 0'), t)
+
+    def test_filter_raises_on_empty_spec(self):
+        t = self._sampleTable()
+        with self.assertRaisesRegex(ValueError, "non-empty"):
+            t.filter('   ')
+
+    def test_filter_raises_on_bare_column_name(self):
+        t = self._sampleTable()
+        with self.assertRaisesRegex(ValueError, "column name only"):
+            t.filter('rlnA')
+
+    def test_update_then_filter_chaining(self):
+        t = self._sampleTable()
+        t.update('rlnB = rlnA * 10').filter('rlnB >= 20')
+        self.assertEqual(t.size(), 2)
+        self.assertEqual([row.rlnA for row in t], [2, 3])
+        self.assertEqual([row.rlnB for row in t], [20, 30])
+
+
 class TestRelionStarTomo(unittest.TestCase):
     """Tests for Relion tomography STAR file validation helpers."""
 
