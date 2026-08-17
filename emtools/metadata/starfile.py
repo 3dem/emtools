@@ -557,6 +557,93 @@ class RelionStar:
         "rlnTomoYShiftAngst"
     ]
 
+    TOMO_OPTIMISATION_SET_TABLE = 'optimisation_set'
+    TOMO_OPTIMISATION_SET_COLUMNS = [
+        'rlnTomoParticlesFile',
+        'rlnTomoTomogramsFile'
+    ]
+
+    TOMO_PARTICLES_TABLE = 'particles'
+    TOMO_PARTICLES_COLUMNS = [
+        'rlnTomoName',
+    ]
+    TOMO_PARTICLES_PIXEL_COORD_COLUMNS = [
+        'rlnCoordinateX',
+        'rlnCoordinateY',
+        'rlnCoordinateZ',
+    ]
+    TOMO_PARTICLES_CENTERED_COORD_COLUMNS = [
+        'rlnCenteredCoordinateXAngst',
+        'rlnCenteredCoordinateYAngst',
+        'rlnCenteredCoordinateZAngst',
+    ]
+
+    @staticmethod
+    def hasTomoParticleCoordinates(table):
+        """Return True if the table has tomography particle coordinates."""
+        return (
+            table.hasAllColumns(RelionStar.TOMO_PARTICLES_PIXEL_COORD_COLUMNS)
+            or table.hasAllColumns(RelionStar.TOMO_PARTICLES_CENTERED_COORD_COLUMNS)
+        )
+
+    @staticmethod
+    def isTomoOptimisationSet(starFile):
+        """Return True if the STAR file has a compliant optimisation_set table."""
+        try:
+            RelionStar.readTomoOptimisationSet(starFile)
+            return True
+        except (OSError, IOError, Exception):
+            return False
+
+    @staticmethod
+    def isTomoParticles(starFile):
+        """Return True if the STAR file has a compliant tomography particles table."""
+        if not starFile or not os.path.isfile(starFile):
+            return False
+        try:
+            with StarFile(starFile) as sf:
+                if RelionStar.TOMO_PARTICLES_TABLE not in sf.getTableNames():
+                    return False
+                if sf.getTableSize(RelionStar.TOMO_PARTICLES_TABLE) < 1:
+                    return False
+                table = sf.getTableInfo(RelionStar.TOMO_PARTICLES_TABLE)
+                return (
+                    table is not None
+                    and table.hasAllColumns(RelionStar.TOMO_PARTICLES_COLUMNS)
+                    and RelionStar.hasTomoParticleCoordinates(table)
+                )
+        except (OSError, IOError, Exception):
+            return False
+
+    @staticmethod
+    def readTomoOptimisationSet(starFile):
+        """Read the optimisation_set table or raise ValueError."""
+        if not starFile or not os.path.isfile(starFile):
+            raise ValueError(f"Invalid STAR file: {starFile}")
+        all_tables = StarFile.getTablesDict(starFile)
+        first_table = next(iter(all_tables.values()))
+
+        if not first_table.hasAllColumns(RelionStar.TOMO_OPTIMISATION_SET_COLUMNS):
+            raise ValueError(
+                f"{starFile} is not a compliant tomography optimisation_set STAR file."
+            )
+        return first_table
+
+    @staticmethod
+    def readTomoParticles(starFile):
+        """Read the particles table or raise ValueError."""
+        if not RelionStar.isTomoParticles(starFile):
+            raise ValueError(
+                f"{starFile} is not a compliant tomography particles STAR file."
+            )
+        table = StarFile.getTableFromFile(RelionStar.TOMO_PARTICLES_TABLE, starFile)
+        if not table:
+            raise ValueError(
+                f"Could not read '{RelionStar.TOMO_PARTICLES_TABLE}' "
+                f"table from {starFile}."
+            )
+        return table
+
     @staticmethod
     def to_bool(strValue):
         """ Convert Relion Yes/No to True/False. """
@@ -743,25 +830,72 @@ class RelionStar:
         return Table(cols)
 
     @staticmethod
-    def get_acquisition(inputTableOrFile):
-        """ Load acquisition parameters from an optics table
-        or a given input STAR file.
-        """
-        if isinstance(inputTableOrFile, Table):
-            tOptics = inputTableOrFile
+    def _acquisition_from_row(row):
+        """ Build Acquisition from an optics or tomography global row. """
+        if getattr(row, 'rlnTomoTiltSeriesPixelSize', None):
+            pixel_size = RelionStar.getTomoPixelSize(row)
         else:
-            with StarFile(inputTableOrFile) as sf:
-                tOptics = sf.getTable('optics')
+            pixel_size = (getattr(row, 'rlnMicrographPixelSize', None)
+                          or row.rlnMicrographOriginalPixelSize)
 
-        o = tOptics[0]._asdict()  # get first row
-
-        return Acquisition(
-            pixel_size=o.get('rlnMicrographPixelSize',
-                             o['rlnMicrographOriginalPixelSize']),
-            voltage=o['rlnVoltage'],
-            cs=o['rlnSphericalAberration'],
-            amplitude_contrast=o.get('rlnAmplitudeContrast', 0.1)
+        acq = Acquisition(
+            pixel_size=pixel_size,
+            voltage=row.rlnVoltage,
+            cs=row.rlnSphericalAberration,
+            amplitude_contrast=getattr(row, 'rlnAmplitudeContrast', 0.1)
         )
+        if gain := getattr(row, 'rlnMicrographGainName', None):
+            acq['gain'] = gain
+        if dose := getattr(row, 'rlnMicrographDoseRate', None):
+            acq['total_dose'] = float(dose)
+
+        return acq
+
+    @staticmethod
+    def _resolve_linked_star(baseStarFile, linkedPath):
+        if not linkedPath:
+            return None
+        if os.path.isabs(linkedPath):
+            return linkedPath
+
+        candidates = [
+            os.path.normpath(os.path.join(os.path.dirname(baseStarFile),
+                                          linkedPath)),
+            os.path.normpath(os.path.join(os.getcwd(), linkedPath)),
+        ]
+        for candidate in candidates:
+            if os.path.exists(candidate):
+                return candidate
+        return candidates[0]
+
+    @staticmethod
+    def getAcquisition(inputTableOrFile):
+        """ Load acquisition parameters from an optics/global table row,
+        or a given input STAR file (movies, tilt series, tomograms, etc.).
+        """
+        if hasattr(inputTableOrFile, 'rlnVoltage'):
+            return RelionStar._acquisition_from_row(inputTableOrFile)
+
+        if isinstance(inputTableOrFile, Table):
+            return RelionStar._acquisition_from_row(inputTableOrFile[0])
+
+        starFile = inputTableOrFile
+        if RelionStar.isTomoOptimisationSet(starFile):
+            row = RelionStar.readTomoOptimisationSet(starFile)[0]
+            if tomogramsStar := getattr(row, 'rlnTomoTomogramsFile', None):
+                return RelionStar.getAcquisition(
+                    RelionStar._resolve_linked_star(starFile, tomogramsStar))
+            if particlesStar := getattr(row, 'rlnTomoParticlesFile', None):
+                return RelionStar.getAcquisition(
+                    RelionStar._resolve_linked_star(starFile, particlesStar))
+
+        with StarFile(starFile) as sf:
+            if t := sf.getTable('optics'):
+                return RelionStar._acquisition_from_row(t[0])
+            if t := sf.getTable('global'):
+                return RelionStar._acquisition_from_row(t[0])
+
+        raise Exception(f"Could not read acquisition parameters from {starFile}")
 
     @staticmethod
     def alignment_from_xf(xf_row, pixel_size):

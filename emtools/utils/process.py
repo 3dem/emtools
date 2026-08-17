@@ -119,11 +119,37 @@ class Process:
         return processes
 
     @staticmethod
-    def checkChilds(programName, folderPath, kill=False, verbose=0):
+    def checkChilds(programName, folderPath, kill=False, verbose=0, pid=None):
         from .system import System
         specs = System.specs()
         cpus = specs['CPUs']
-        processes = Process.ps(programName, workingDir=folderPath, children=True)
+        attrs = ['pid', 'ppid', 'name', 'cwd', 'username',
+                 'memory_percent', 'cpu_percent']
+
+        if pid is not None:
+            try:
+                root = psutil.Process(int(pid))
+            except (psutil.NoSuchProcess, psutil.AccessDenied, ValueError):
+                return False
+
+            procs = []
+            seen = set()
+
+            def _add(proc):
+                if proc.pid in seen:
+                    return
+                proc.info = proc.as_dict(attrs)
+                procs.append(proc)
+                seen.add(proc.pid)
+
+            _add(root)
+            for child in root.children(recursive=True):
+                _add(child)
+            folder = root.info.get('cwd') or folderPath or ''
+            processes = {folder: procs}
+        else:
+            processes = Process.ps(programName, workingDir=folderPath,
+                                   children=True)
 
         color = Color.red if kill else Color.bold
 
@@ -156,6 +182,8 @@ class Process:
                         p.kill()
                     except:
                         pass
+
+        return True if pid is not None else None
 
     class Logger:
         """ Use a logger to log commands that are executed via os.system. """

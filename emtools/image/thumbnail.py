@@ -163,6 +163,91 @@ class Thumbnail:
         return Thumbnail(**defaults)
 
     @staticmethod
+    def _preview_stack_indices(n):
+        """Return 4 frame indices: first, two equally spaced, last."""
+        if n <= 1:
+            return [0, 0, 0, 0]
+        if n == 2:
+            return [0, 0, 1, 1]
+        if n == 3:
+            return [0, 1, 1, 2]
+        return [
+            0,
+            int(round((n - 1) / 3)),
+            int(round(2 * (n - 1) / 3)),
+            n - 1,
+        ]
+
+    @staticmethod
+    def _array_to_uint8(array):
+        i_min = array.min()
+        i_max = array.max()
+        if i_max == i_min:
+            return np.zeros(array.shape, dtype=np.uint8)
+        return ((array - i_min) / (i_max - i_min) * 255).astype(np.uint8)
+
+    @staticmethod
+    def _montage_grid(pil_images, cols, pad=2, bg_color=(255, 255, 255)):
+        w, h = pil_images[0].size
+        rows = (len(pil_images) + cols - 1) // cols
+        canvas_w = cols * w + (cols + 1) * pad
+        canvas_h = rows * h + (rows + 1) * pad
+        montage = PIL.Image.new('RGB', (canvas_w, canvas_h), bg_color)
+
+        for i, img in enumerate(pil_images):
+            row, col = divmod(i, cols)
+            x = pad + col * (w + pad)
+            y = pad + row * (h + pad)
+            if img.mode != 'RGB':
+                img = img.convert('RGB')
+            montage.paste(img, (x, y))
+
+        return montage
+
+    @staticmethod
+    def _volume_slice_montage(data):
+        im255 = Thumbnail._array_to_uint8(data)
+        _, y, x = im255.shape
+        z = im255.shape[0]
+
+        ximg = PIL.Image.fromarray(im255[:, :, x // 2])
+        yimg = PIL.Image.fromarray(im255[:, y // 2, :])
+        zimg = PIL.Image.fromarray(im255[z // 2, :, :])
+
+        xw, xh = ximg.size
+        yw, yh = yimg.size
+        pad = 2
+        canvas_w = (xw + yw) + (3 * pad)
+        canvas_h = (xh + yh) + (3 * pad)
+        montage = PIL.Image.new('RGB', (canvas_w, canvas_h), (255, 255, 255))
+
+        montage.paste(ximg.convert('RGB'), (pad, pad))
+        montage.paste(zimg.convert('RGB'), (pad, xh + 2 * pad))
+        montage.paste(yimg.convert('RGB'), (xw + 2 * pad, xh + 2 * pad))
+
+        return montage
+
+    @staticmethod
+    def _stack_frame_montage(data):
+        n = data.shape[0]
+        im255 = Thumbnail._array_to_uint8(data)
+        indices = Thumbnail._preview_stack_indices(n)
+        images = [PIL.Image.fromarray(im255[i, :, :]) for i in indices]
+        return Thumbnail._montage_grid(images, cols=2)
+
+    @staticmethod
+    def _mrc_is_stack(mrc, image_lower):
+        if image_lower.endswith('.mrcs'):
+            return True
+        if len(mrc.data.shape) < 3:
+            return False
+        if mrc.is_volume():
+            return False
+        if mrc.is_image_stack():
+            return True
+        return True
+
+    @staticmethod
     def Preview(imagePath, **kwargs):
         imageLower = imagePath.lower()
         thumb = Thumbnail.Micrograph(max_size=(256, 256))
@@ -173,58 +258,84 @@ class Thumbnail:
         if Path.isImage(imagePath):
             return thumb.from_path(imagePath)
 
-        if imageLower.endswith('.mrc'):
-            dims = Image.get_dimensions(imagePath)
-            mrc = mrcfile.open(imagePath, permissive=True)
-            thumb = Thumbnail.Micrograph()
-            if len(dims) == 2:
-                array = mrc.data 
-            elif len(dims) == 3:
-                x, y, z = dims
-                if mrc.is_volume() or (x == y and y == z):
-                    thumb = Thumbnail(max_size=(256, 256), output_format='base64')
-                    iMax = mrc.data.max()  # min(imean + 10 * isd, imageArray.max())
-                    iMin = mrc.data.min()  # max(imean - 10 * isd, imageArray.min())
-                    im255 = ((mrc.data - iMin) / (iMax - iMin) * 255).astype(np.uint8)
+        if imageLower.endswith('.mrc') or imageLower.endswith('.mrcs'):
+            with mrcfile.open(imagePath, permissive=True) as mrc:
+                data = mrc.data
+                if len(data.shape) == 2:
+                    return thumb.from_array(data)
 
-                    # 1. Setup
-                    ximg = PIL.Image.fromarray(im255[:, :, x // 2])
-                    yimg = PIL.Image.fromarray(im255[:, y // 2, :])
-                    zimg = PIL.Image.fromarray(im255[z // 2, :, :])
+                if len(data.shape) != 3:
+                    raise Exception("Invalid dimensions: %s" % (data.shape,))
 
-                    xw, xh = ximg.size
-                    yw, yh = yimg.size
-                    zw, zh = zimg.size
+                preview_thumb = Thumbnail(
+                    max_size=(256, 256), output_format='base64')
 
-                    pad = 2  # The thickness of the dark gray lines/borders
-
-                    # 2. Calculate canvas size for a full grid with outer borders
-                    # Total Width = (2 * image width) + (3 * padding for left, middle, right)
-                    canvas_w = (xw + yw) + (3 * pad)
-                    canvas_h = (xh + zh) + (3 * pad)
-
-                    # Create canvas with a white background (matching your image)
-                    bg_color = (256, 256, 256) 
-                    montage = PIL.Image.new('RGB', (canvas_w, canvas_h), bg_color)
-
-                    # Top-Left: x slice
-                    montage.paste(ximg, (pad, pad))                    
-                    # Bottom-Left: z slice
-                    montage.paste(zimg, (pad, xh + 2 * pad))
-                    # Bottom-Right: y slice
-                    montage.paste(yimg, (xw + 2 * pad, xh + 2 * pad))
-
-                    return thumb.from_pil(montage)
-                    Pretty.dprint("Loading MRC volume: %s" % str(array.shape))
+                if Thumbnail._mrc_is_stack(mrc, imageLower):
+                    montage = Thumbnail._stack_frame_montage(data)
                 else:
-                    array = mrc.data[z//2, :, :] # FIXME
-                    Pretty.dprint("Loading MRC 2D: %s" % str(array.shape))
-                return thumb.from_array(array)
-            else:
-                raise Exception("Invalid dimensions: %s" % dims)
+                    montage = Thumbnail._volume_slice_montage(data)
+
+                return preview_thumb.from_pil(montage)
+
+        raise Exception("Can not generate preview for: %s" % imagePath)
 
 
 class Image:
+    @staticmethod
+    def _mrc_data_type(mrc, image_lower):
+        if image_lower.endswith('.mrcs'):
+            return '2D stack'
+        if mrc.is_volume():
+            return '3D volume'
+        if mrc.is_image_stack():
+            return '2D stack'
+        return None
+
+    @staticmethod
+    def get_metadata(imagePath):
+        """Return structured metadata for EM image files, or None."""
+        imageLower = imagePath.lower()
+        if imageLower.endswith('.mrc') or imageLower.endswith('.mrcs'):
+            with mrcfile.open(imagePath) as mrc:
+                dims = mrc.data.shape[::-1]
+                if len(dims) == 2:
+                    x, y = dims
+                    return {
+                        'info': f'{x} x {y}',
+                    }
+                if len(dims) == 3:
+                    x, y, third = dims
+                    is_cube = x == y == third
+                    data_type = '3D volume' if is_cube else Image._mrc_data_type(mrc, imageLower)
+                    if data_type == '3D volume':
+                        return {
+                            'dataType': data_type,
+                            'info': f'{x} x {y} x {third}',
+                        }
+                    return {
+                        'dataType': '2D stack',
+                        'info': f'{x} x {y} x {third}',
+                    }
+            return None
+
+        if (imageLower.endswith('.tif') or
+                imageLower.endswith('.tiff') or
+                imageLower.endswith('.eer') or
+                imageLower.endswith('.gain')):
+            dims = Image.get_dimensions(imagePath)
+            if len(dims) == 2:
+                x, y = dims
+                return {
+                    'info': f'{x} x {y}',
+                }
+            if len(dims) == 3:
+                x, y, n = dims
+                return {
+                    'dataType': '2D stack',
+                    'info': f'{x} x {y} x {n}',
+                }
+        return None
+
     @staticmethod
     def get_dimensions(imagePath):
         imageLower = imagePath.lower()
