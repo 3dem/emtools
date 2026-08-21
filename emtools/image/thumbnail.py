@@ -24,6 +24,8 @@ import tifffile
 import PIL
 from PIL import Image
 
+from emtools.datatypes import STACK_2D, VOLUME
+
 from emtools.utils import Path, Pretty
 
 
@@ -284,11 +286,11 @@ class Image:
     @staticmethod
     def _mrc_data_type(mrc, image_lower):
         if image_lower.endswith('.mrcs'):
-            return '2D stack'
+            return STACK_2D
         if mrc.is_volume():
-            return '3D volume'
+            return VOLUME
         if mrc.is_image_stack():
-            return '2D stack'
+            return STACK_2D
         return None
 
     @staticmethod
@@ -306,14 +308,14 @@ class Image:
                 if len(dims) == 3:
                     x, y, third = dims
                     is_cube = x == y == third
-                    data_type = '3D volume' if is_cube else Image._mrc_data_type(mrc, imageLower)
-                    if data_type == '3D volume':
+                    data_type = VOLUME if is_cube else Image._mrc_data_type(mrc, imageLower)
+                    if data_type == VOLUME:
                         return {
                             'dataType': data_type,
                             'info': f'{x} x {y} x {third}',
                         }
                     return {
-                        'dataType': '2D stack',
+                        'dataType': STACK_2D,
                         'info': f'{x} x {y} x {third}',
                     }
             return None
@@ -331,7 +333,7 @@ class Image:
             if len(dims) == 3:
                 x, y, n = dims
                 return {
-                    'dataType': '2D stack',
+                    'dataType': STACK_2D,
                     'info': f'{x} x {y} x {n}',
                 }
         return None

@@ -15,8 +15,7 @@
 # **************************************************************************
 
 
-from .thumbnail import Thumbnail, Image
-from emtools.datatypes import STACK_2D, VOLUME
+"""Shared data-type labels for EM file and workflow object metadata."""
 
-
-__all__ = ["Thumbnail", "Image", "STACK_2D", "VOLUME"]
+VOLUME = 'Volume'
+STACK_2D = '2D stack'

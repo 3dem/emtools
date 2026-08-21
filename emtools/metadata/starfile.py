@@ -353,6 +353,10 @@ class StarFile(AbstractContextManager):
         self.writeLine(f"\n# StarFile written on {Pretty.now()} "
                        f"by emtools ({emtools.__version__})\n")
 
+    def writeVersion(self, version):
+        """ Write a RELION metadata-table version tag (e.g. 50001). """
+        self.writeLine(f"# version {version}")
+
     def _writeTableName(self, tableName):
         self._file.write("\ndata_%s\n\n" % (tableName or ''))
 
@@ -425,7 +429,8 @@ class StarFile(AbstractContextManager):
     def writeTable(self, tableName, table,
                    singleRow=False,
                    computeFormat=False,
-                   timeStamp=False):
+                   timeStamp=False,
+                   version=None):
         """ Write a Table in Star format to the given file.
 
         Args:
@@ -435,9 +440,12 @@ class StarFile(AbstractContextManager):
             computeFormat: compute format based on widest first column,
                 just for aesthetics and not recommended for large tables.
                 Values can be 'left' or 'rigth' for alignment.
+            version: If set, write a RELION ``# version`` tag before the table.
         """
         if timeStamp:
             self.writeTimeStamp()
+        if version is not None:
+            self.writeVersion(version)
 
         if table.size():
             if singleRow:
@@ -535,6 +543,9 @@ def _escapeStrValue(v):
 
 
 class RelionStar:
+
+    # RELION 5 pipeline STAR tables; prevents re-running pre-5.0 label migration.
+    PIPELINE_VERSION = 50001
 
     JOB_INDEX = re.compile('job(\d{3})')
     TRUE_VALUES = ['Yes', 'True', 'true']
@@ -720,12 +731,18 @@ class RelionStar:
         """ Convert params dict to a Relion job.star file. """
         with StarFile(jobStarFile, 'w') as sfOut:
             tJob = Table(['rlnJobTypeLabel', 'rlnJobIsContinue', 'rlnJobIsTomo'])
-            tJob.addRowValues(jobType, isContinue, isTomo)  # FIXME check continue and isTomo
+            tJob.addRowValues(jobType, isContinue, isTomo)  
             sfOut.writeTimeStamp()
             sfOut.writeTable('job', tJob, singleRow=True)
             tValues = Table(['rlnJobOptionVariable', 'rlnJobOptionValue'])
             for k, v in values.items():
-                val = ('Yes' if v else 'No') if isinstance(v, bool) else v
+                if isinstance(v, bool):
+                    val = 'Yes' if v else 'No'
+                elif v is None:
+                    val = ''
+                else:
+                    # Job option values are always strings in STAR files.
+                    val = str(v)
                 tValues.addRowValues(k, val)
             sfOut.writeTable('joboptions_values', tValues, computeFormat='left')
 
@@ -970,16 +987,19 @@ class RelionStar:
 
     @staticmethod
     def write_pipeline(pipeline_star, jobCounter=1, tables=None):
+        version = RelionStar.PIPELINE_VERSION
         with StarFile(pipeline_star, 'w') as sf:
             sf.writeTimeStamp()
             tGeneral = Table(['rlnPipeLineJobCounter'])
             tGeneral.addRowValues(jobCounter)
-            sf.writeTable('pipeline_general', tGeneral, singleRow=True)
+            sf.writeTable('pipeline_general', tGeneral,
+                          singleRow=True, version=version)
 
             if tables:
                 for name, t in tables.items():
                     if len(t):
-                        sf.writeTable(f"pipeline_{name}", t, computeFormat=True)
+                        sf.writeTable(f"pipeline_{name}", t,
+                                      computeFormat=True, version=version)
 
     @staticmethod
     def job_index(jobId):
