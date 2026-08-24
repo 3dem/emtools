@@ -96,6 +96,7 @@ class Workflow:
             return self._outputs.values()
 
         def registerOutput(self, dataId, **kwargs):
+            kwargs.setdefault('datatype', 'File')
             data = Workflow.Data(self, dataId, **kwargs)
             self.wf.data[dataId] = data
             self._outputs[dataId] = data

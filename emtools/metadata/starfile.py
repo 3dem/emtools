@@ -1113,7 +1113,7 @@ class RelionStar:
                 for row in tOutput:
                     job = wf.getJob(Path.rmslash(row.rlnPipeLineEdgeProcess))
                     nodeName = row.rlnPipeLineEdgeToNode
-                    job.registerOutput(nodeName, datatype=nodes[nodeName])
+                    job.registerOutput(nodeName, datatype=nodes.get(nodeName, 'File'))
 
             if tInput := _table('input_edges'):
                 for row in tInput:
@@ -1157,7 +1157,7 @@ class RelionStar:
             for o in job.outputs:
                 tNodes.addRowValues(
                     rlnPipeLineNodeName=o.id,
-                    rlnPipeLineNodeTypeLabel=o['datatype'],
+                    rlnPipeLineNodeTypeLabel=o.get('datatype', 'File'),
                     rlnPipeLineNodeTypeLabelDepth=1
                 )
                 tOutput.addRowValues(
