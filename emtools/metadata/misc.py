@@ -386,8 +386,8 @@ class WarpPopulation:
             self._data = xmlDict['Population']
             self.Name = self._data['Param']['@Value']
             self.LastRefinementOptions = {e['@Name']: e['@Value'] for e in self._data['LastRefinementOptions']['Param']}
-            self.Sources = self._parseList(self._data['Sources'], 'Source')
-            self.Species = self._parseList(self._data['Species'], 'Species')
+            self.Sources = self._parseList(self._data.get('Sources'), 'Source')
+            self.Species = self._parseList(self._data.get('Species'), 'Species')
 
     def __repr__(self):
         r = f"Population: {self.Name}\n"
@@ -403,20 +403,43 @@ class WarpPopulation:
         return r
 
     def _parseList(self, data, key):
+        if not data:
+            return []
+
         suffix = f".{key.lower()}"
 
         def _parseItem(item):
             p = item['@Path']
             name = os.path.basename(p).replace(suffix, '')
             return {'id': item['@GUID'], 'path': p, 'name': name}
-        
-        from pprint import pprint
-        d = data[key]
 
-        if isinstance(d, list):            
+        d = data.get(key) if isinstance(data, dict) else None
+        if not d:
+            return []
+
+        if isinstance(d, list):
             return [_parseItem(item) for item in d]
+        return [_parseItem(d)]
+
+    def getSource(self, nameOrIndex):
+        entry = None
+        if isinstance(nameOrIndex, int):
+            entry = self.Sources[nameOrIndex]
         else:
-            return [_parseItem(d)]
+            for s in self.Sources:
+                if s['name'] == nameOrIndex:
+                    entry = s
+                    break
+
+        if not entry:
+            raise Exception(f"Source {nameOrIndex} not found")
+
+        folder = os.path.dirname(self._filepath)
+        source_file = os.path.join(folder, entry['path'])
+        if not os.path.isfile(source_file):
+            raise Exception(f"Source file not found: {source_file}")
+
+        return source_file
 
     def getSpecies(self, nameOrIndex):
         entry = None
@@ -432,8 +455,11 @@ class WarpPopulation:
             raise Exception(f"Species {nameOrIndex} not found")
 
         folder = os.path.dirname(self._filepath)
+        species_file = os.path.join(folder, entry['path'])
+        if not os.path.isfile(species_file):
+            raise Exception(f"Species file not found: {species_file}")
 
-        return WarpSpecies(os.path.join(folder, entry['path']))
+        return WarpSpecies(species_file)
 
 
 class Acquisition(dict):
