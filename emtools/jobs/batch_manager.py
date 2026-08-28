@@ -191,6 +191,8 @@ class Batch(dict, FolderManager):
     def call(self, program, kwargs, logfile=None, verbose=False, cwd=True):
         """
         If cwd is True, call the program from the batch directory.
+        If cwd is a string, call the program from that directory.
+        If cwd is False, use the current working directory.
         """
         if isinstance(kwargs, dict):
             args = Args(kwargs).toList()
@@ -209,8 +211,8 @@ class Batch(dict, FolderManager):
             f.write(f"\n{cmd}\n")
             f.flush()
             kwargs = {'stderr': f, 'stdout': f}
-            if cwd:
-                kwargs['cwd'] = self.path
+            if cwd is not False:
+                kwargs['cwd'] = self.path if cwd is True else cwd
             subprocess.call(args, **kwargs)
 
     def tic(self, prefix=''):
