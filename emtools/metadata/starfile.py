@@ -703,6 +703,24 @@ class RelionStar:
                 + RelionStar.reconstructedTomoSize(row, axis) / 2)
 
     @staticmethod
+    def particleCoordsToPixel(particle_row, tomo_row):
+        """Return particle X/Y/Z coordinates in reconstructed tomogram pixels."""
+        if hasattr(particle_row, 'rlnCoordinateX'):
+            return (
+                float(particle_row.rlnCoordinateX),
+                float(particle_row.rlnCoordinateY),
+                float(particle_row.rlnCoordinateZ),
+            )
+        return (
+            RelionStar.centeredAngstToPixel(
+                particle_row.rlnCenteredCoordinateXAngst, tomo_row, 'rlnTomoSizeX'),
+            RelionStar.centeredAngstToPixel(
+                particle_row.rlnCenteredCoordinateYAngst, tomo_row, 'rlnTomoSizeY'),
+            RelionStar.centeredAngstToPixel(
+                particle_row.rlnCenteredCoordinateZAngst, tomo_row, 'rlnTomoSizeZ'),
+        )
+
+    @staticmethod
     def getTomogram(row):
         """Return tomogram path, trying from different columns."""
         cols = ['rlnTomoReconstructedTomogram', 'rlnTomoReconstructedTomogramDenoised']
