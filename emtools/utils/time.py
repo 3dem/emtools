@@ -14,7 +14,7 @@
 # *
 # **************************************************************************
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from functools import wraps
 
 from .pretty import Pretty
@@ -37,6 +37,9 @@ class Timer(object):
 
     def toc(self, message=None, pretty=False):
         print(self.getToc(message=message, pretty=pretty))
+
+    def getTic(self):
+        return Pretty.datetime(self._dt)
 
     def getToc(self, message=None, pretty=False):
         if message:
@@ -62,3 +65,8 @@ class Timer(object):
             t.toc(f"Function {func.__name__} took: ")
             return result
         return wrap
+
+    @staticmethod
+    def parse_timedelta(tdStr):
+        hours, minutes, seconds = tuple(map(float, tdStr.split(':')))
+        return timedelta(hours=hours, minutes=minutes, seconds=seconds)

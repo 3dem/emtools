@@ -77,7 +77,10 @@ setup(
            'emt-files = emtools.scripts.emt_files:main',
            'emt-epu = emtools.scripts.emt_epu:main',
            'emt-beamshifts = emtools.scripts.emt_beamshifts:main',
-           'emt-angdist = emtools.scripts.emt_angdist:main'
+           'emt-angdist = emtools.scripts.emt_angdist:main',
+           'emt-star = emtools.scripts.emt_star:main',
+           'emt-image = emtools.image.__main__:main'
+
        ],
 
     },

@@ -15,10 +15,13 @@
 # **************************************************************************
 
 import os
-
+import pathlib
 from datetime import datetime, timedelta
+from glob import glob
+from readline import insert_text
+import xmltodict
 
-from emtools.utils import Path, Pretty, Process
+from emtools.utils import Path, Pretty, Color, Timer
 
 
 class Bins:
@@ -134,7 +137,8 @@ class DataFiles:
                       f"\n\ttime: {last_dt}")
 
             if self.first and self.last_ts:
-                print(f"Duration: {(last_dt - first_dt).seconds / 3600:0.2f} hours")
+                #print(f"Duration: {(last_dt - first_dt).seconds / 3600:0.2f} hours")
+                print(f"Duration: {Pretty.delta(last_dt - first_dt)}")
 
             print(f"Total {name}s: {self.total}, size: {Pretty.size(self.total_size)}")
 
@@ -160,12 +164,17 @@ class DataFiles:
 
     def scan(self, folder):
         """ Scan a folder and register all files recursively. """
+        t = Timer()
+
         self.root = Path.addslash(folder)
+        self._total_dirs = 0
 
         for root, dirs, files in os.walk(folder):
             for fn in files:
                 self.register(os.path.join(root, fn))
             self._total_dirs += len(dirs)
+
+        #t.toc("Scanned")
 
     def register(self, filename, stat=None):
         """ Register a file, if stat is None it will be calculated. """
@@ -207,7 +216,7 @@ class MovieFiles(DataFiles):
     def __init__(self, **kwargs):
         DataFiles.__init__(self, filters=[self.is_movie], **kwargs)
         self._moviesSuffix = kwargs.get('moviesSuffix',
-                                        ['fractions.tiff', '.eer'])
+                                        ['fractions.tiff', '.eer', 'fractions.mrc'])
 
     def is_movie(self, fn):
         return any(fn.endswith(s) for s in self._moviesSuffix)
@@ -274,9 +283,55 @@ class Mdoc(dict):
 
         return mdoc
 
+    @staticmethod
+    def glob(mdocPattern):
+        mdocs = []
+        for mdocFn in glob(mdocPattern):
+            mdoc = Mdoc.parse(mdocFn)
+            mdoc['MdocFile'] = {'Path': mdocFn}
+            mdocs.append(mdoc)
+
+        return mdocs
+
+    @staticmethod
+    def getSubFrameBase(section):
+        """ Helper method to extract the subframe base filename. """
+        subFramePath = section.get('SubFramePath', '')
+        return pathlib.PureWindowsPath(subFramePath).parts[-1]
+
+    MDOC_DATE_FMTS = ('%d-%b-%Y  %H:%M:%S', '%d-%b-%y  %H:%M:%S')
+
+    @staticmethod
+    def parseDate(dateStr):
+        """ Parse an mdoc DateTime field (e.g. '31-Jul-19  17:20:05').
+
+        SerialEM used dd-Mon-yy before 4.1; yyyy since 4.1 (July 2022).
+        """
+        for fmt in Mdoc.MDOC_DATE_FMTS:
+            try:
+                return datetime.strptime(dateStr, fmt)
+            except ValueError:
+                continue
+        raise ValueError(f"Could not parse mdoc DateTime: {dateStr!r}")
+
     @property
     def zvalues(self):
-        return [(k, v) for k, v in self.items() if k.startswith('ZValue')]
+        """ Get the Z values from the mdoc file.
+        Returns:
+            list[tuple[str, dict]]: list of Z values with the section data
+        """
+        return list(self.zsections())
+
+    def zsections(self, sort=None):
+        """ Iterate over ZValue sections in the mdoc file.
+        Args:
+            sort: Use 'date' to sort by acquisition date (newest first).
+        """
+        sections = [(k, v) for k, v in self.items() if k.startswith('ZValue')]
+        if sort == 'date':
+            sections.sort(key=lambda x: Mdoc.parseDate(x[1]['DateTime']))
+        for k, v in sections:
+            yield k, v
 
     def write(self, path):
         with open(path, 'w') as f:
@@ -296,3 +351,190 @@ class TextFile:
                 if line and not line.startswith('#'):
                     yield line
 
+
+class WarpXml:
+    """ Helper class to read Warp's XML files. """
+    def __init__(self, xmlPath):
+        with open(xmlPath) as f:
+            self._data = xmltodict.parse(f.read())
+
+    def getDict(self, *keys):
+        """ Navigate the provided keys and get a dict from Name=Value pairs.
+        """
+        d = self._data
+        for k in keys:
+            d = d[k]
+
+        return {e['@Name']: e['@Value'] for e in d}
+
+
+class WarpSpecies(dict):
+    """ Helper class to read Warp's .species files. """
+    def __init__(self, speciesFile):
+        with open(speciesFile) as f:
+            xmlDict = xmltodict.parse(f.read())
+            self._data = xmlDict['Species']
+            for item in self._data['Param']:
+                self[item['@Name']] = item['@Value']
+
+class WarpPopulation:
+    """ Helper class to read Warp's .population files. """
+    def __init__(self, populationFile):
+        self._filepath = populationFile
+        with open(populationFile) as f:
+            xmlDict = xmltodict.parse(f.read())
+            self._data = xmlDict['Population']
+            self.Name = self._data['Param']['@Value']
+            self.LastRefinementOptions = {e['@Name']: e['@Value'] for e in self._data['LastRefinementOptions']['Param']}
+            self.Sources = self._parseList(self._data.get('Sources'), 'Source')
+            self.Species = self._parseList(self._data.get('Species'), 'Species')
+
+    def __repr__(self):
+        r = f"Population: {self.Name}\n"
+        r += f"   {Color.bold('Last Refinement Options:')}\n"
+        for k, v in self.LastRefinementOptions.items():
+            r += f"      {k:<30}:  {v:<}\n"
+        r += f"   {Color.green('Species:')}\n"
+        for s in self.Species:
+            r += f"      {s['name']:<30}:  {s['path']:<}\n"
+        r += f"   {Color.cyan('Sources:')}\n"
+        for s in self.Sources:
+            r += f"      {s['name']:<30}:  {s['path']:<}\n"
+        return r
+
+    def _parseList(self, data, key):
+        if not data:
+            return []
+
+        suffix = f".{key.lower()}"
+
+        def _parseItem(item):
+            p = item['@Path']
+            name = os.path.basename(p).replace(suffix, '')
+            return {'id': item['@GUID'], 'path': p, 'name': name}
+
+        d = data.get(key) if isinstance(data, dict) else None
+        if not d:
+            return []
+
+        if isinstance(d, list):
+            return [_parseItem(item) for item in d]
+        return [_parseItem(d)]
+
+    def getSource(self, nameOrIndex):
+        entry = None
+        if isinstance(nameOrIndex, int):
+            entry = self.Sources[nameOrIndex]
+        else:
+            for s in self.Sources:
+                if s['name'] == nameOrIndex:
+                    entry = s
+                    break
+
+        if not entry:
+            raise Exception(f"Source {nameOrIndex} not found")
+
+        folder = os.path.dirname(self._filepath)
+        source_file = os.path.join(folder, entry['path'])
+        if not os.path.isfile(source_file):
+            raise Exception(f"Source file not found: {source_file}")
+
+        return source_file
+
+    def getSpecies(self, nameOrIndex):
+        entry = None
+        if isinstance(nameOrIndex, int):
+            entry = self.Species[nameOrIndex]
+        else:
+            for s in self.Species:
+                if s['name'] == nameOrIndex:
+                    entry = s
+                    break
+
+        if not entry:
+            raise Exception(f"Species {nameOrIndex} not found")
+
+        folder = os.path.dirname(self._filepath)
+        species_file = os.path.join(folder, entry['path'])
+        if not os.path.isfile(species_file):
+            raise Exception(f"Species file not found: {species_file}")
+
+        return WarpSpecies(species_file)
+
+
+class Acquisition(dict):
+    """ Subclass from dict with some utilities related to Acquisition. """
+
+    @property
+    def pixel_size(self):
+        return float(self['pixel_size'])
+
+    @pixel_size.setter
+    def pixel_size(self, value):
+        self['pixel_size'] = float(value)
+
+    @property
+    def voltage(self):
+        return float(self['voltage'])
+
+    @voltage.setter
+    def voltage(self, value):
+        self['voltage'] = float(value)
+
+    @property
+    def cs(self):
+        return float(self['cs'])
+
+    @cs.setter
+    def cs(self, value):
+        self['cs'] = float(value)
+
+    @property
+    def amplitude_contrast(self):
+        return float(self.get('amplitude_contrast', 0.1))
+
+    @amplitude_contrast.setter
+    def amplitude_contrast(self, value):
+        self['amplitude_contrast'] = float(value)
+
+    @property
+    def dose(self):
+        return float(self.get('dose', 0.0))
+
+    @dose.setter
+    def dose(self, value):
+        self['dose'] = float(value)
+
+    @property
+    def total_dose(self):
+        return float(self.get('total_dose', 0.0))
+
+    @total_dose.setter
+    def total_dose(self, value):
+        self['total_dose'] = float(value)
+
+
+class Imod:
+    @staticmethod
+    def get_angles_from_tlt(tltFile):
+        """ Read AreTomo3/IMOD file with tilt angles.
+
+        Expected file:
+            TS_NAME_Imod/TS_NAME_st.tlt
+        Returns:
+            list[float]: list of tilt angles (as floats) in the same order as in the input file.
+        """
+        return [float(line) for line in TextFile.stripLines(tltFile)]
+
+    @staticmethod
+    def get_alignment_from_xf(xfFile):
+        """ Read IMOD XF transformation matrices from .xf file.
+
+        Expected file:
+            TS_NAME_Imod/TS_NAME_st.xf
+        Each row contains:
+            A11 A12 A21 A22 DX DY
+        Returns:
+            list[list[float]]
+        """
+        return [list(map(float, line.split())) for line in TextFile.stripLines(xfFile)]

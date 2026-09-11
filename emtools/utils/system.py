@@ -23,6 +23,10 @@ index, name, driver_version, temperature.gpu, utilization.gpu [%], utilization.m
 import socket
 import platform
 import psutil
+import time
+import json
+import threading
+from datetime import datetime
 
 from .process import Process
 
@@ -97,3 +101,62 @@ class System:
     def hostname():
         """ Return the hostname. """
         return socket.gethostname()
+
+
+class GpuMonitor(threading.Thread):
+    """ Monitor GPU utilization.
+    Keeps an internal record of utilization data points, indexed by time. """
+
+    def __init__(self):
+        super().__init__()
+        self._stopEvent = threading.Event()
+        self._data = {
+            "sample": System.gpus(),
+            "columns": ["timestamp", ["temperature.gpu",
+                                      "utilization.gpu",
+                                      "utilization.memory"]],
+            "rows": []
+        }
+        self.sleep = 1
+        self.outputLog = 'gpu_monitor.json'
+
+    def sample(self, verbose=False):
+        now = datetime.now()
+        gpus = System.gpus()
+        gpuLine = f'\r{now}   '
+        row = [str(now), []]
+        gpuEntries = {}
+        for gpuDict in sorted(gpus, key=lambda r: r['index']):
+            i = gpuDict['index']
+            ugpu = gpuDict["utilization.gpu"].split()[0]  # Remove % character
+            umem = gpuDict["utilization.memory"].split()[0]
+            gpuStr = f'{i}: gpu {ugpu}, mem {umem}'
+            gpuLine += f"{gpuStr:<30}"
+            gpuEntries[i] = [ugpu, umem]
+        if verbose:
+            print(gpuLine, end="")
+        self._data['rows'].append([str(now), gpuEntries])
+
+    def monitor(self, outputLog=None):
+        if outputLog:
+            self.outputLog = outputLog
+        c = 0
+        while not self._stopEvent.is_set():
+            self.sample()
+            c += 1
+            if self.outputLog and c % 10 == 1:
+                with open(self.outputLog, 'w') as f:
+                    json.dump(self._data, f)
+                    c = 0
+
+            time.sleep(self.sleep)
+
+    def run(self):
+        self.monitor()
+
+    def stop(self):
+        """ Stop the current thread. """
+        self._stopEvent.set()
+        self.join()
+
+

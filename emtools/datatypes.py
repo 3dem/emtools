@@ -14,15 +14,8 @@
 # *
 # **************************************************************************
 
-from .table import Column, ColumnList, Table
-from .starfile import StarFile, StarMonitor, RelionStar
-from .epu import EPU
-from .misc import (Bins, TsBins, DataFiles, MovieFiles,
-                   Mdoc, TextFile, Acquisition, WarpXml, WarpPopulation, Imod)
-from .sqlite import SqliteFile
 
+"""Shared data-type labels for EM file and workflow object metadata."""
 
-__all__ = ["Column", "ColumnList", "Table",
-           "StarFile", "StarMonitor", "RelionStar", "EPU",
-           "Bins", "TsBins", "SqliteFile", "DataFiles", "MovieFiles",
-           "Mdoc", "TextFile", "Acquisition", "WarpXml", "WarpPopulation", "Imod"]
+VOLUME = 'Volume'
+STACK_2D = '2D stack'

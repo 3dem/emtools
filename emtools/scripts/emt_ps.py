@@ -55,44 +55,9 @@ def main():
         print(System.hostname())
         sys.exit(0)
 
-    v = args.verbose
-
-    kill = args.kill
     folderPath = os.path.abspath(args.folder) if args.folder else args.folder
     print('path', folderPath)
-    processes = Process.ps(args.name, workingDir=folderPath, children=args.children)
-
-    color = Color.red if kill else Color.bold
-
-    for folder, procs in processes.items():
-        print(Color.warn(f"{folder}"))
-        header = f"     {'USER':<15} {'PPID/PID':<15} {color('PROGRAM'):<30}"
-        if v > 0:
-            header += f" {'CPU(%)':>10} {'MEMORY(%)':>10}"
-            if v > 1:
-                header += f" {'COMMAND LINE'}"
-
-        print(Color.bold(header))
-
-        prefix = 'Killing' if kill else ''
-        for p in procs:
-            pidstr = f"{p.info['ppid']}/{p.pid}"
-            msg = f"   {prefix}  {p.info['username']:<15} {pidstr:<15} {color(p.info['name']):<30}"
-            if v > 0:
-                try:
-                    cpu_percent = p.cpu_percent(interval=1) / cpus
-                except:
-                    continue
-
-                msg += f" {cpu_percent:>10,.2f} {p.info['memory_percent']:>10,.2f}"
-                if v > 1:
-                    msg += f" {p.cmdline()}"
-            print(msg)
-            if kill:
-                try:
-                    p.kill()
-                except:
-                    pass
+    Process.checkChilds(args.name, folderPath, kill=args.kill, verbose=args.verbose)
 
 
 if __name__ == '__main__':

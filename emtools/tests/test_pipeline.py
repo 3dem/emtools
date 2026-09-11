@@ -18,7 +18,10 @@ import unittest
 import numpy as np
 import time
 
+
+from emtools.utils import Color
 from emtools.jobs import Pipeline
+
 
 
 class TestThreading(unittest.TestCase):
@@ -65,4 +68,28 @@ class TestThreading(unittest.TestCase):
 
         pipeline.run()
 
+        print("PROCESSING DONE!!!")
+
+    def test_queueMaxSize(self):
+        def generate():
+            n = 8
+            for i in range(1, n+1):
+                batch = "batch_%03d" % i
+                print("Generated batch: %s" % Color.green(batch))
+                yield batch
+                time.sleep(1)
+
+        def process(batch):
+            print("Processing batch: %s" % Color.warn(batch))
+            time.sleep(8)
+            return batch
+
+        pipeline = Pipeline(debug=False)
+
+        g = pipeline.addGenerator(generate,
+                                  name='GENERATOR',
+                                  queueMaxSize=2)
+
+        pipeline.addProcessor(g.outputQueue, process, name='PROC')
+        pipeline.run()
         print("PROCESSING DONE!!!")

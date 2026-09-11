@@ -15,12 +15,30 @@
 # **************************************************************************
 
 import os
+import shutil
 import time
+import tempfile
+import json
+import hashlib
+from glob import glob
 from datetime import datetime as dt
 from collections import OrderedDict
+from contextlib import contextmanager
 
 from .pretty import Pretty
 from .process import Process
+from .color import Color
+
+
+GLOB_CHARS = ['*', '?', '[', ']']
+
+IMAGE_EXT = ['tiff', 'tif', 'png', 'jpg', 'jpeg']
+EM_EXT = ['mrc', 'mrcs', 'eer', 'gain']
+TEXT_EXT = ['txt', 'log', 'err', 'out', 'json', 'csv', 
+            'star', 'sh', 'out', 'err', 'bashrc', 'xml',
+            'script', 'settings', 'job', 'tomostar', 'mdoc',
+            'population', 'species', 
+            'aln', 'com', 'rawtlt', 'tlt', 'xf', 'xtilt']
 
 
 class Path:
@@ -79,7 +97,7 @@ class Path:
 
     @staticmethod
     def addslash(path):
-        """ Add an slash (/) to the end of the path if not present. """
+        """ Add a slash (/) to the end of the path if not present. """
         return path if path.endswith('/') else path + '/'
 
     @staticmethod
@@ -93,19 +111,50 @@ class Path:
         Use rsync as a subprocess to check if the two directories
         are synchronized. Both directories must exist.
         """
+        return Path.rsync(dir1, dir2, '--dry-run', verbose=verbose) == 0
+
+    @staticmethod
+    def rsync(dir1, dir2, *args,
+              verbose=False,
+              size=False):
+        """ Run rsync to synchronize dir1 and dir2 are synchronized (i.e. same content)
+        Use rsync as a subprocess to synchronize dir1 and dir2 and return
+        the number of files transferred.
+        Args:
+            dir1: source directory
+            dir2: destination directory
+            *args: extra arguments to rsync
+            verbose: If True, print the command to stdout
+            size: If True, a tuple is returned with transferred files and transferred data size
+        """
         dir1 = Path.addslash(dir1)
         dir2 = Path.addslash(dir2)
 
-        p = Process('rsync', '--dry-run', '-a', '--stats', dir1, dir2)
+        cmd = ['rsync', '-a', '--stats'] + list(args) + [dir1, dir2]
+        p = Process(*cmd, doRaise=True)
+
         if verbose:
             p.print(stdout=True)
 
-        transf = 1
+        def _value(line):
+            # Get the value after the colon (:)
+            # and remove , that is used to separate thousands
+            v = line.split(':')[1].replace(',', '')
+            if ' ' in v:  # MacOS have a different rsync output format
+                v = v.strip().split()[0]
+            return int(v)
+
+        transf = 0
+        transfSize = 0
+
         for line in p.lines():
-            if 'files transferred:' in line:
-                transf = int(line.split(':')[1])
-                break
-        return transf == 0
+            if 'Number of regular files transferred:' in line:
+                transf = _value(line)
+            elif 'Total transferred file size:' in line:
+                transfSize = _value(line.replace('bytes', ''))
+
+        return (transf, transfSize) if size else transf
+
 
     @staticmethod
     def lastModified(folder):
@@ -115,11 +164,15 @@ class Path:
 
         for fn in files:
             f = os.path.join(folder, fn)
-            s = os.stat(f)
-            t = (f, s.st_mtime)
-            last = t if not last or s.st_mtime > last[1] else last
+            if os.path.exists(f):
+                s = os.stat(f)
+                t = (f, s.st_mtime)
+                last = t if not last or s.st_mtime > last[1] else last
 
-        return last[0], dt.fromtimestamp(last[1])
+        if last:
+            return last[0], dt.fromtimestamp(last[1])
+        else:
+            return None, None
 
     @staticmethod
     def copyFile(file1, file2, sleep=0):
@@ -132,7 +185,6 @@ class Path:
                     f2.write(rbytes)
                     if sleep:
                         time.sleep(sleep)
-        #Process.system(f'cp {file1} {file2}')
 
     @staticmethod
     def copyDir(dir1, dir2, copyFileFunc=None, pl=None, **kwargs):
@@ -162,6 +214,31 @@ class Path:
             for f in files:
                 _copy(os.path.join(root, f), os.path.join(root2, f), **kwargs)
 
+    @staticmethod
+    @contextmanager
+    def tmpDir(**kwargs):
+        tmp = tempfile.mkdtemp(prefix=kwargs.get('prefix', ''))
+
+        chdir = kwargs.get('chdir', False)
+        cwd = os.getcwd()
+        if chdir:
+            os.chdir(tmp)
+
+        if kwargs.get('verbose', True):
+            print(f"Using temporary dir: {tmp}")
+
+        yield tmp
+
+        if chdir:
+            os.chdir(cwd)
+
+        globalClean = int(os.environ.get('EMWRAP_CLEAN', 1))
+        if kwargs.get('clean', globalClean):
+            shutil.rmtree(tmp)
+        else:
+            print(f"Temporary directory was not deleted, "
+                  f"remove it with the following command: \n"
+                  f"{Color.bold('rm -rf %s' % tmp)}")
 
     @staticmethod
     def replaceExt(filename, newExt):
@@ -197,4 +274,138 @@ class Path:
         from os.path.exists.
         """
         return path and os.path.exists(path)
+
+    @staticmethod
+    def isPattern(path):
+        return any(c in path for c in GLOB_CHARS)
+
+    @staticmethod
+    def isImage(path):
+        return Path.getExt(path).lower()[1:] in IMAGE_EXT
+
+    @staticmethod
+    def isText(path):
+        return Path.getExt(path).lower()[1:] in TEXT_EXT
+
+    @staticmethod
+    def isEmImage(path):
+        return Path.getExt(path).lower()[1:] in EM_EXT
+
+    @staticmethod
+    def computeHashDict(path, verbose=False):
+        """ Get the hash of a file. """
+        import hashlib
+
+        result = {}
+
+        # Ensure the input path is absolute for consistent splitting
+        base_path = os.path.abspath(path)
+
+        for root, dirs, files in os.walk(base_path):
+            # 1. Handle folder entries (directories)
+            for dir_name in dirs:
+                dir_full_path = os.path.join(root, dir_name)
+                # Calculate path relative to the input folder
+                rel_dir_path = os.path.relpath(dir_full_path, base_path)
+                result[rel_dir_path] = ""
+
+            # 2. Handle file entries
+            for file_name in files:
+                file_full_path = os.path.join(root, file_name)
+                rel_file_path = os.path.relpath(file_full_path, base_path)
+
+                # Calculate MD5 by reading the entire file into memory
+                try:
+                    if verbose:
+                        print(f"Computing hash for {rel_file_path}")
+                    with open(file_full_path, "rb") as f:
+                        file_bytes = f.read()  # Loads the whole file into RAM
+                    
+                    # Hash the complete byte string at once
+                    result[rel_file_path] = hashlib.md5(file_bytes).hexdigest()
+                except (PermissionError, FileNotFoundError):
+                    result[rel_file_path] = "ERROR: Cannot read file"
+
+        return result
+
+
+class FolderManager:
+    """ Helper class with some path utilities from a given path. """
+    def __init__(self, path):
+        self.__path = path
+        self._logId = ""
+        self.__extraLog = None
+
+    def join(self, *p):
+        return os.path.join(self.__path, *p)
+
+    def relpath(self, p):
+        return os.path.relpath(p, self.path)
+
+    def mkdir(self, *p, **kwargs):
+        d = self.join(*p)
+        Process.system(f"mkdir -p '{d}'", **kwargs)
+        return d
+
+    def exists(self, *p):
+        return os.path.exists(self.join(*p))
+
+    @property
+    def path(self):
+        return self.__path
+
+    @path.setter
+    def path(self, value):
+        if not isinstance(value, str):
+            raise Exception(f"FolderManger: Path must be a string, got {type(value)}")
+        self.__path = value
+
+    def clear(self):
+        """ Remove existing path. """
+        Process.system(f"rm -rf '{self.path}'")
+
+    def create(self, **kwargs):
+        """ Create batch folder. """
+        self.log(f"Creating folder: {self.path}")
+        Process.system(f"rm -rf '{self.path}'", **kwargs)
+        Process.system(f"mkdir -p '{self.path}'", **kwargs)
+
+    def log(self, msg, flush=False):
+        logMsg = f"{Pretty.now()}:{self._logId} {msg}"
+        print(logMsg, flush=flush)
+        if self.__extraLog:
+            self.__extraLog(logMsg, flush=flush)
+        return logMsg
+
+    def setExtraLog(self, logFunc):
+        self.__extraLog = logFunc
+
+    def listdir(self):
+        """ Return files relative to the path. """
+        return os.listdir(self.path)
+
+    def glob(self, pattern):
+        return glob(self.join(pattern))
+
+    def dump(self, obj, fn):
+        filePath = self.join(fn)
+        with open(filePath, 'w') as f:
+            json.dump(obj, f, indent=4)
+
+    def rename(self, oldFn, newFn):
+        os.rename(self.join(oldFn), self.join(newFn))
+
+    def link(self, fn, absolute=False, name=None):
+        """ Link a file inside the folder and return the basename.
+        If name is None, the basename of the fn will be used.
+        """
+        base = name or os.path.basename(fn)
+        src = os.path.abspath(fn) if absolute else self.relpath(fn)
+        os.symlink(src, self.join(base))
+        return base
+
+    def copy(self, *paths):
+        """ Copy one or many files into the path. """
+        for p in paths:
+            shutil.copy(p, self.__path)
 
