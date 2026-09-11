@@ -22,7 +22,7 @@ import mrcfile
 import tifffile
 
 import PIL
-from PIL import Image
+from PIL import ImageFilter, ImageOps
 
 from emtools.datatypes import STACK_2D, VOLUME
 
@@ -75,10 +75,11 @@ class Thumbnail:
         self.scale = scale
 
         if self.contrast_factor is not None:
-            pil_img = PIL.ImageOps.autocontrast(pil_img, cutoff=self.contrast_factor)
+            pil_img = ImageOps.autocontrast(pil_img, cutoff=self.contrast_factor)
 
         if self.gaussian_radius is not None:
-            pil_img = pil_img.filter(PIL.ImageFilter.GaussianBlur(radius=self.gaussian_radius))
+            pil_img = pil_img.filter(
+                ImageFilter.GaussianBlur(radius=self.gaussian_radius))
 
         return self.__format(pil_img)
 
@@ -101,7 +102,7 @@ class Thumbnail:
             array = imageArray
         else:
             if self.std_threshold > 0:
-                array = np.array(imageArray)
+                array = np.asarray(imageArray, dtype=np.float64)
                 imean = array.mean()
                 isd = array.std()
                 isdTh = self.std_threshold * isd
@@ -352,3 +353,116 @@ class Image:
                 n = len(tif.pages)
                 y, x = tif.pages[0].shape
                 return (x, y, n) if n > 1 else (x, y)
+
+    @staticmethod
+    def get_array(imagePath):
+        imageLower = imagePath.lower()
+        if imageLower.endswith('.mrc') or imageLower.endswith('.mrcs'):
+            with mrcfile.open(imagePath) as mrc:
+                return mrc.data
+        elif (imageLower.endswith('.tif') or
+              imageLower.endswith('.tiff') or
+              imageLower.endswith('.eer') or
+              imageLower.endswith('.gain')):
+            with tifffile.TiffFile(imagePath) as tif:
+                return tif.asarray()
+        return None
+
+    @staticmethod
+    def _fourier_output_size(size, scale):
+        """Return rounded output size for a given scale factor."""
+        return max(1, int(round(size * scale)))
+
+    @staticmethod
+    def _fourier_axis_slices(in_size, out_size):
+        """Return source/destination slices for DC-centered crop or pad.
+
+        The DC component lives at in_size // 2 in the shifted spectrum, so the
+        crop/pad is centered there rather than on the array geometric center.
+        This keeps even and odd input/output sizes aligned correctly.
+        """
+        if out_size <= in_size:
+            src_start = in_size // 2 - out_size // 2
+            dst_start = 0
+            length = out_size
+        else:
+            src_start = 0
+            dst_start = out_size // 2 - in_size // 2
+            length = in_size
+        return src_start, dst_start, length
+
+    @staticmethod
+    def _is_volume(imagePath, array):
+        """Return True when a 3D array should be treated as a volume."""
+        if array.ndim != 3:
+            return False
+
+        if Path.exists(imagePath):
+            metadata = Image.get_metadata(imagePath)
+            if metadata and metadata.get('dataType') == VOLUME:
+                return True
+
+        z, y, x = array.shape
+        return z == y == x
+
+    @staticmethod
+    def _fourier_rescale(image, scale):
+        """Resize an n-D image by Fourier cropping or zero-padding."""
+        shape = image.shape
+        new_shape = tuple(Image._fourier_output_size(s, scale) for s in shape)
+
+        if new_shape == shape:
+            return np.array(image, copy=True)
+
+        spectrum = np.fft.fftshift(np.fft.fftn(image))
+        resized = np.zeros(new_shape, dtype=spectrum.dtype)
+
+        src_slices = []
+        dst_slices = []
+        for in_size, out_size in zip(shape, new_shape):
+            src_start, dst_start, length = Image._fourier_axis_slices(
+                in_size, out_size)
+            src_slices.append(slice(src_start, src_start + length))
+            dst_slices.append(slice(dst_start, dst_start + length))
+
+        resized[tuple(dst_slices)] = spectrum[tuple(src_slices)]
+
+        # Preserve average intensity when changing the number of pixels.
+        amp = np.prod(new_shape) / np.prod(shape)
+        result = np.real(np.fft.ifftn(np.fft.ifftshift(resized * amp)))
+
+        if np.issubdtype(image.dtype, np.floating):
+            return result.astype(image.dtype, copy=False)
+        return result
+
+    @staticmethod
+    def fourier_crop(imagePath, scale):
+        """Resize an image by Fourier cropping or padding.
+
+        Args:
+            imagePath: Path to a supported image file.
+            scale: Output-size multiplier per axis (e.g. 0.5 halves the size).
+
+        Returns:
+            Rescaled numpy array with the same dimensionality as the input.
+        """
+        array = Image.get_array(imagePath)
+        if array is None:
+            raise ValueError("Unsupported image format: %s" % imagePath)
+        if scale <= 0:
+            raise ValueError("Scale must be positive, got: %s" % scale)
+
+        if array.ndim == 2:
+            return Image._fourier_rescale(array, scale)
+
+        if array.ndim == 3:
+            if Image._is_volume(imagePath, array):
+                return Image._fourier_rescale(array, scale)
+
+            return np.stack(
+                [Image._fourier_rescale(array[i], scale)
+                 for i in range(array.shape[0])],
+                axis=0,
+            )
+
+        raise ValueError("Expected 2D or 3D image, got shape: %s" % (array.shape,))
