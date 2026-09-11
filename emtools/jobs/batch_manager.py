@@ -120,6 +120,43 @@ class Args(dict):
         return result
 
 
+class NumericList(list):
+    """ List of integers parsed from a string, subclassing 'list' so the
+    result can be used directly wherever a list of ints is expected.
+
+    Accepted syntax (used e.g. for GPU ids, tilt/frame indices, etc.):
+        - Individual values, separated by spaces and/or commas:
+              '1,2,3'  or  '1 2 3'  or  '1, 2 3'
+        - Inclusive ranges, written as 'start-end' (no spaces around the
+          dash), which get expanded to every value in between:
+              '10-12'      -> 10, 11, 12
+              '1, 5-7, 9'  -> 1, 5, 6, 7, 9
+    """
+
+    _RANGE = re.compile(r'^(?P<start>\d+)-(?P<end>\d+)$')
+
+    @classmethod
+    def fromString(cls, string):
+        values = cls()
+        for token in re.split(r'[,\s]+', str(string).strip()):
+            if not token:
+                continue
+            m = cls._RANGE.match(token)
+            if m:
+                start, end = int(m.group('start')), int(m.group('end'))
+                if end < start:
+                    raise ValueError(
+                        f"Invalid range '{token}': end must be >= start.")
+                values.extend(range(start, end + 1))
+            else:
+                try:
+                    values.append(int(token))
+                except ValueError:
+                    raise ValueError(
+                        f"Invalid numeric value or range '{token}' in '{string}'.")
+        return values
+
+
 class Vars:
     """ Handle variable definitions, either from input dict
     or from os.environ.

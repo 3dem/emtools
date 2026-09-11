@@ -15,10 +15,10 @@
 # **************************************************************************
 
 from .pipeline import Pipeline
-from .batch_manager import (Args, Batch, Vars,
+from .batch_manager import (Args, NumericList, Batch, Vars,
                             BatchManager, MdocBatchManager, TsStarBatchManager)
 from .workflow import Workflow
 
 __all__ = ["Pipeline", "Workflow",
-           "Args", "Vars",
+           "Args", "NumericList", "Vars",
            "Batch", "BatchManager", "MdocBatchManager", "TsStarBatchManager"]
