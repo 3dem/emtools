@@ -131,12 +131,16 @@ class Workflow:
 
             for i in inputs:
                 self._inputs[i.id] = i
-                i.childs.append(self)
+                if self not in i.childs:
+                    i.childs.append(self)
 
         def hasInput(self, inputId):
             return inputId in self._inputs
 
         def clearInputs(self):
+            for data in self._inputs.values():
+                if self in data.childs:
+                    data.childs.remove(self)
             self._inputs = {}
 
         def removeOutput(self, output_id):
