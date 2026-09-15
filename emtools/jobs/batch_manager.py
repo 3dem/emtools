@@ -469,5 +469,10 @@ class TsStarBatchManager(BatchManager):
             tsName = tsRow.rlnTomoName
             tsMdoc = tsRow.rlnTomoMdocFile
             with StarFile(tsRow.rlnTomoTiltSeriesStarFile) as sf:
-                items = [row._asdict() for row in sf.iterTable(tsName)]
+                # Force float typing for angle columns: guessing from the
+                # first row alone can lock the column to int and then break
+                # on later rows with decimal values (e.g. '3.00013').
+                items = [row._asdict() for row in sf.iterTable(
+                    tsName, types={'rlnTomoNominalStageTiltAngle': float,
+                                   'rlnTomoNominalTiltAxisAngle': float})]
             yield self._createBatch(items, tsName=tsName, tsMdoc=tsMdoc, rowDict=tsRow._asdict())
