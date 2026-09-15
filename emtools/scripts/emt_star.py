@@ -145,6 +145,62 @@ def _processTable(sf, tableName, actions, subset=None):
     return tableInfo, list(table), singleRow
 
 
+def mergeStarFiles(pattern, tableName, output=None):
+    files = sorted(glob(pattern))
+    if not files:
+        raise FileNotFoundError(f"No STAR files match pattern: {pattern}")
+
+    tableInfo = None
+    refColumnNames = None
+    singleRow = None
+    rows = []
+
+    for starPath in files:
+        with StarFile(starPath) as sf:
+            if tableName not in sf.getTableNames():
+                raise ValueError(
+                    f"Table '{tableName}' not found in {starPath}")
+
+            info = sf.getTableInfo(tableName)
+            columnNames = info.getColumnNames()
+            fileSingleRow = sf._singleRow
+
+            if tableInfo is None:
+                tableInfo = info
+                refColumnNames = columnNames
+                singleRow = fileSingleRow
+            else:
+                if len(columnNames) != len(refColumnNames):
+                    raise ValueError(
+                        f"Column count mismatch in {starPath}: "
+                        f"expected {len(refColumnNames)}, got {len(columnNames)}")
+                if columnNames != refColumnNames:
+                    raise ValueError(
+                        f"Column names mismatch in {starPath}: "
+                        f"expected {refColumnNames}, got {columnNames}")
+                if fileSingleRow != singleRow:
+                    raise ValueError(
+                        f"Table layout mismatch in {starPath}: "
+                        f"expected {'single-row' if singleRow else 'loop'} "
+                        f"format")
+
+            for row in sf.iterTable(tableName):
+                rows.append(row)
+
+    if len(rows) > 1:
+        singleRow = False
+
+    closeOutput = output is not None
+    out = open(output, 'w') if closeOutput else sys.stdout
+    try:
+        with StarFile(out, closeFile=closeOutput) as sfOut:
+            sfOut.writeTimeStamp()
+            _writeProcessedTable(sfOut, tableName, tableInfo, rows, singleRow)
+    finally:
+        if closeOutput:
+            out.close()
+
+
 def operateStarFile(inputStar, operations, subset=None, output=None):
     if not operations:
         raise ValueError("At least one --operate action is required")
@@ -304,7 +360,7 @@ def splitBy(starFile, column, minSize):
 def main():
     p = argparse.ArgumentParser(prog='emt-star')
     p.add_argument('input',
-                   help="Input STAR file. ")
+                   help="Input STAR file, or a glob pattern when using --merge.")
     p.add_argument('--group_by', '-g', nargs=2,
                    metavar=('TABLE', 'COLUMN'),
                    help="Count rows grouped by a given label")
@@ -330,6 +386,9 @@ def main():
                                  "UPDATE, FILTER, or DROP. For UPDATE, EXPR is comma-separated "
                                  "column=expression assignments. For FILTER, EXPR is a boolean "
                                  "expression per row. For DROP, EXPR is ignored.")
+    outputMode.add_argument('--merge', '-m', metavar='TABLE',
+                            help="Merge TABLE from every STAR file matching the input "
+                                 "glob pattern into one table.")
     p.add_argument('--subset', '-n', type=int, default=None, metavar='N',
                    help="Process at most N rows per table (for debugging)")
     p.add_argument('--output', '-o', default=None, metavar='FILE',
@@ -341,6 +400,8 @@ def main():
     if args.operate:
         operateStarFile(inputStar, _parseOperateArgs(args.operate),
                         subset=args.subset, output=args.output)
+    elif args.merge:
+        mergeStarFiles(inputStar, args.merge, output=args.output)
     elif args.group_by:
         table, column = args.group_by
         groupBy(inputStar, table, column)
