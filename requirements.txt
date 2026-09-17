@@ -1,5 +1,6 @@
 mrcfile
 numpy
+scipy
 Pillow>=9.0.1
 xmltodict
 psutil

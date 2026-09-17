@@ -466,3 +466,139 @@ class Image:
             )
 
         raise ValueError("Expected 2D or 3D image, got shape: %s" % (array.shape,))
+
+    @staticmethod
+    def matrix_from_xf(xf_row):
+        """Build a 3x3 homogeneous 2D affine matrix from an IMOD-style XF row.
+
+        Args:
+            xf_row: Sequence of 6 floats [A11, A12, A21, A22, DX, DY], as
+                returned e.g. by RelionStar.alignment_to_xf or
+                Imod.get_alignment_from_xf. Following the IMOD .xf
+                convention (also used by RELION-5's tomography data model,
+                see Burt et al., FEBS Open Bio 2024), this maps
+                image-centred RAW-image coordinates (x, y) onto their
+                position in the ALIGNED image:
+
+                    [x']   [A11 A12] [x]   [DX]
+                    [y'] = [A21 A22] [y] + [DY]
+
+        Returns:
+            np.ndarray: 3x3 matrix [[A11, A12, DX], [A21, A22, DY], [0, 0, 1]],
+            suitable for Image.apply_transform.
+        """
+        a11, a12, a21, a22, dx, dy = xf_row
+        return np.array([[a11, a12, dx],
+                          [a21, a22, dy],
+                          [0.0, 0.0, 1.0]], dtype=np.float64)
+
+    @staticmethod
+    def apply_transform(image, matrix, order=1, cval=0.0, output_shape=None):
+        """Resample a 2D image with a 3x3 affine transformation matrix.
+
+        This is meant to apply tilt-series alignment (in-plane rotation and
+        shift, as produced by AreTomo2/3, IMOD/etomo or the Warp ts-align
+        wrapper) on the fly, without writing a new aligned image to disk.
+
+        `matrix` follows the same (x, y), image-centred convention as the
+        IMOD .xf format used elsewhere in emtools (see
+        Image.matrix_from_xf and RelionStar.alignment_to_xf /
+        alignment_from_xf): it maps a RAW image pixel onto its position in
+        the ALIGNED image. As in IMOD, the centre of both images is taken
+        at (width // 2, height // 2).
+
+        Args:
+            image: 2D numpy array (a single tilt image) to be aligned.
+            matrix: 3x3 array-like, or a flat 6-value IMOD XF row
+                (A11, A12, A21, A22, DX, DY), describing the raw-to-aligned
+                transform.
+            order: Spline interpolation order forwarded to
+                scipy.ndimage.affine_transform (1 = bilinear).
+            cval: Fill value used for output pixels that fall outside the
+                input image.
+            output_shape: Optional (height, width) of the output image.
+                Defaults to the shape of `image`.
+
+        Returns:
+            np.ndarray: The aligned image; same dtype as the input when it
+            is a floating type.
+        """
+        from scipy.ndimage import affine_transform
+
+        array = np.asarray(image)
+        if array.ndim != 2:
+            raise ValueError(
+                "apply_transform expects a 2D image, got shape: %s" % (array.shape,))
+
+        matrix = np.asarray(matrix, dtype=np.float64)
+        if matrix.shape in ((6,), (2, 3)):
+            matrix = Image.matrix_from_xf(np.ravel(matrix))
+        if matrix.shape != (3, 3):
+            raise ValueError(
+                "Expected a 3x3 affine matrix (or a 6-value XF row), got "
+                "shape: %s" % (matrix.shape,))
+
+        out_shape = tuple(output_shape) if output_shape else array.shape
+        in_h, in_w = array.shape
+        out_h, out_w = out_shape
+
+        # `matrix` maps raw -> aligned pixels; scipy.ndimage.affine_transform
+        # needs the inverse (aligned/output -> raw/input) to resample each
+        # output pixel.
+        inverse = np.linalg.inv(matrix)
+        rotation = inverse[:2, :2]
+        translation = inverse[:2, 2]
+
+        # Swap from the (x, y) maths convention used by the alignment
+        # matrix to numpy's (row, col) = (y, x) array-index convention.
+        swap = np.array([[0.0, 1.0], [1.0, 0.0]])
+        rotation_rc = swap @ rotation @ swap
+        translation_rc = swap @ translation
+
+        # IMOD (and this codebase's XF <-> RELION conversions) place the
+        # coordinate origin at (width // 2, height // 2) of each image.
+        center_in = np.array([in_h // 2, in_w // 2], dtype=np.float64)
+        center_out = np.array([out_h // 2, out_w // 2], dtype=np.float64)
+        offset = center_in + translation_rc - rotation_rc @ center_out
+
+        result = affine_transform(
+            array.astype(np.float64, copy=False),
+            rotation_rc,
+            offset=offset,
+            output_shape=out_shape,
+            order=order,
+            cval=cval,
+            mode='constant',
+        )
+
+        if np.issubdtype(array.dtype, np.floating):
+            return result.astype(array.dtype, copy=False)
+        return result
+
+    @staticmethod
+    def rescale_array(image, scale):
+        """Rescale a 2D image array by Fourier cropping or zero-padding.
+
+        Same operation as Image.fourier_crop, but operating directly on an
+        in-memory 2D array instead of reading a file from disk. Used to
+        resample a tilt image to a different pixel size (e.g. to match the
+        pixel size at which an alignment was computed), and/or to
+        downscale large tilt images before generating a preview thumbnail.
+
+        Args:
+            image: 2D numpy array.
+            scale: Output-size multiplier per axis (e.g. 0.5 halves the
+                size).
+
+        Returns:
+            np.ndarray: Rescaled 2D array.
+        """
+        array = np.asarray(image)
+        if array.ndim != 2:
+            raise ValueError(
+                "rescale_array expects a 2D image, got shape: %s" % (array.shape,))
+        if scale <= 0:
+            raise ValueError("Scale must be positive, got: %s" % scale)
+        if scale == 1:
+            return np.array(array, copy=True)
+        return Image._fourier_rescale(array, scale)
