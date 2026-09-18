@@ -16,7 +16,7 @@
 
 import math
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 
 
 class Pretty:
@@ -70,6 +70,20 @@ class Pretty:
         return datetime.strptime(dt_str, f)
 
     @staticmethod
+    def parse_timedelta(td_str, **kwargs):
+        """Parse 'HH:MM:SS' or 'D days, HH:MM:SS' format"""
+        parts = td_str.split(', ')
+        days = 0
+        if len(parts) == 2:
+            days = int(parts[0].split()[0])
+            time_part = parts[1]
+        else:
+            time_part = parts[0]
+        
+        h, m, s = map(float, time_part.split(':'))
+        return timedelta(days=days, hours=h, minutes=m, seconds=s)
+
+    @staticmethod
     def modified(fn, **kwargs):
         if not os.path.exists(fn):
             return None
@@ -80,7 +94,7 @@ class Pretty:
     @staticmethod
     def elapsed(timestamp, now=None):
         """
-        Get a datetime object or a int() Epoch timestamp and return a
+        Get a datetime object or an int() Epoch timestamp and return a
         pretty string like 'an hour ago', 'Yesterday', '3 months ago',
         'just now', etc
         """
@@ -128,5 +142,10 @@ class Pretty:
             return _plural(30, 'month')
 
         return _plural(365, 'year')
+
+    @staticmethod
+    def dprint(msg):
+        """ DEBUG print with timestamp and flush. """
+        print(f"{Pretty.now()}: >>> DEBUG: {msg}", flush=True)
 
 
