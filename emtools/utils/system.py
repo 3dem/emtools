@@ -21,6 +21,7 @@ index, name, driver_version, temperature.gpu, utilization.gpu [%], utilization.m
 """
 
 import socket
+import shutil
 import platform
 import psutil
 import time
@@ -101,6 +102,51 @@ class System:
     def hostname():
         """ Return the hostname. """
         return socket.gethostname()
+
+    @staticmethod
+    def distro():
+        """ Return a human-readable OS distribution name and version.
+        On Linux, it reads /etc/os-release (PRETTY_NAME); on macOS it uses
+        the product version; falls back to platform.platform() otherwise.
+        """
+        system = platform.system()
+
+        if system == 'Linux':
+            info = {}
+            try:
+                with open('/etc/os-release') as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line or line.startswith('#') or '=' not in line:
+                            continue
+                        key, _, value = line.partition('=')
+                        info[key] = value.strip().strip('"')
+            except (FileNotFoundError, OSError):
+                pass
+
+            name = info.get('PRETTY_NAME') or info.get('NAME')
+            return name or f"Linux {platform.release()}"
+
+        elif system == 'Darwin':
+            version, _, _ = platform.mac_ver()
+            return f"macOS {version}" if version else "macOS"
+
+        return platform.platform()
+
+    @staticmethod
+    def kernel():
+        """ Return the kernel release (e.g. what 'uname -r' would print). """
+        return platform.release()
+
+    @staticmethod
+    def disk(path='/'):
+        """ Return disk usage (in bytes) for the filesystem containing path.
+        Keys: 'total', 'used', 'free'. Returns None if it can't be read. """
+        try:
+            usage = shutil.disk_usage(path)
+        except OSError:
+            return None
+        return {'total': usage.total, 'used': usage.used, 'free': usage.free}
 
 
 class GpuMonitor(threading.Thread):

@@ -37,7 +37,7 @@ EM_EXT = ['mrc', 'mrcs', 'eer', 'gain']
 TEXT_EXT = ['txt', 'log', 'err', 'out', 'json', 'csv', 
             'star', 'sh', 'out', 'err', 'bashrc', 'xml',
             'script', 'settings', 'job', 'tomostar', 'mdoc',
-            'population', 'species', 
+            'population', 'species', 'yaml', 'id',
             'aln', 'com', 'rawtlt', 'tlt', 'xf', 'xtilt']
 
 
