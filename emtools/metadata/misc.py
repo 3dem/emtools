@@ -14,6 +14,7 @@
 # *
 # **************************************************************************
 
+import hashlib
 import os
 import pathlib
 from datetime import datetime, timedelta
@@ -420,6 +421,26 @@ class WarpPopulation:
         if isinstance(d, list):
             return [_parseItem(item) for item in d]
         return [_parseItem(d)]
+
+    def digest(self):
+        """ Content digest of this population and the species it points to.
+
+        Refinements rewrite the species files while leaving the .population
+        file itself untouched, so both are needed to tell two states apart.
+        """
+        md5 = hashlib.md5()
+        folder = os.path.dirname(self._filepath)
+        entries = [('', self._filepath)]
+        entries += [(s['path'], os.path.join(folder, s['path']))
+                    for s in self.Species]
+
+        for relpath, path in entries:
+            md5.update(relpath.encode())
+            if os.path.isfile(path):
+                with open(path, 'rb') as f:
+                    md5.update(f.read())
+
+        return md5.hexdigest()
 
     def getSource(self, nameOrIndex):
         entry = None

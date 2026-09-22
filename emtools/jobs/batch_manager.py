@@ -230,6 +230,8 @@ class Batch(dict, FolderManager):
         If cwd is True, call the program from the batch directory.
         If cwd is a string, call the program from that directory.
         If cwd is False, use the current working directory.
+
+        Returns the exit code of the program.
         """
         if isinstance(kwargs, dict):
             args = Args(kwargs).toList()
@@ -250,7 +252,7 @@ class Batch(dict, FolderManager):
             kwargs = {'stderr': f, 'stdout': f}
             if cwd is not False:
                 kwargs['cwd'] = self.path if cwd is True else cwd
-            subprocess.call(args, **kwargs)
+            return subprocess.call(args, **kwargs)
 
     def tic(self, prefix=''):
         self._timer.tic()
