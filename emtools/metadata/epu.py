@@ -25,7 +25,8 @@ from .misc import MovieFiles
 
 
 class EPU:
-    MOVIES_SUFFICES = ['_fractions.tiff', '_EER.eer']
+    MOVIES_SUFFICES = ['_fractions.tiff', '_EER.eer', '_fractions.mrc']
+
     @staticmethod
     def get_acquisition(movieXmlFn):
         """ Parse acquisition parameters from EPU's xml movie file. """
@@ -40,7 +41,7 @@ class EPU:
         def _pixelSize(k):
             if not pixelSize:
                 return ''
-            ps = float(pixelSize[k]['numericValue']) * (10**10)
+            ps = float(pixelSize[k]['numericValue']) * (10 ** 10)
             return f'{ps:0.5f}'
 
         data = {
@@ -56,7 +57,7 @@ class EPU:
                 'ExposureTime': camera['ExposureTime'],
                 'ReadoutArea': {'height': camera['ReadoutArea']['a:height'],
                                 'width': camera['ReadoutArea']['a:width']}
-           }
+            }
         }
 
         return data
@@ -129,10 +130,20 @@ class EPU:
                     return fn.replace(s, '.xml')
         return ''
 
+    @staticmethod
+    def count_movies(folder):
+        m = 0
+        for root, dirs, files in os.walk(folder):
+            for fn in files:
+                if EPU.is_movie_fn(fn) and not os.path.islink(os.path.join(root, fn)):
+                    m += 1
+        return m
+
     class Data:
         """ Class to keep track of EPU files and associated metadata.
         The information can be read/write from/to a STAR file.
         """
+
         def __init__(self, rootFolder, epuStar):
             self._acq = None
             self._rootFolder = rootFolder
@@ -229,6 +240,7 @@ class EPU:
         Monitor EPU session files and allow to make a copy of GridSquares
         images and xml files.
         """
+
         def __init__(self, inputDir, outputStar=None, backupFolder=None, pl=None):
             """
             Create a new EPU.Session instance.
