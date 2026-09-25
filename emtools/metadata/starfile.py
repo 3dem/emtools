@@ -97,9 +97,9 @@ class StarFile(AbstractContextManager):
                 # While searching for a data line, we will store the offsets
                 # for any data_ line that we find
                 if line.startswith('data_'):
-                    tn = line.strip().replace('data_', '')
-                    self._offsets[tn] = offset
-                    self._names.append(tn)
+                    ds = line.strip()
+                    self._offsets[ds] = offset
+                    self._names.append(ds.replace('data_', '', 1))
                 offset = f.tell()
                 line = f.readline()
 

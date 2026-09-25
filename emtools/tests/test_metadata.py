@@ -373,6 +373,53 @@ class TestStarFile(unittest.TestCase):
         #self.__test_star_streaming(_pipeline, inputStreaming=True)
         self.__test_star_streaming(_pipeline, inputStreaming=False)
 
+    def test_table_offsets_cache(self):
+        ftmp = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.star')
+        ftmp.write("""
+# version 50001
+
+data_general
+
+_rlnTomoSubTomosAre2DStacks                       1
+
+# version 50001
+
+data_optics
+
+loop_ 
+_rlnOpticsGroup #1 
+_rlnOpticsGroupName #2 
+           1 opticsGroup1 
+           2 opticsGroup2 
+
+# version 50001
+
+data_particles
+
+loop_ 
+_rlnTomoName #1 
+_rlnTomoParticleId #2 
+TS_01            1 
+TS_01            2 
+TS_02            3 
+""")
+        ftmp.close()
+
+        with StarFile(ftmp.name) as sf:
+            self.assertEqual(sf.getTableNames(), ['general', 'optics', 'particles'])
+            self.assertEqual(set(sf._offsets),
+                             {'data_general', 'data_optics', 'data_particles'})
+
+            # Read out of order to exercise seeking from cached offsets
+            self.assertEqual(len(sf.getTable('particles')), 3)
+            self.assertEqual(sf.getTable('general')[0].rlnTomoSubTomosAre2DStacks, 1)
+            self.assertEqual(sf.getTableSize('optics'), 2)
+            self.assertEqual(sf.getTableInfo('particles').getColumnNames(),
+                             ['rlnTomoName', 'rlnTomoParticleId'])
+            self.assertIsNone(sf.getTable('missing'))
+
+        os.unlink(ftmp.name)
+
 
 class TestTable(unittest.TestCase):
     """Tests for Table.update and Table.filter."""
