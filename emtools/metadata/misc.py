@@ -20,6 +20,7 @@ import pathlib
 from datetime import datetime, timedelta
 from glob import glob
 from readline import insert_text
+import numpy as np
 import xmltodict
 
 from emtools.utils import Path, Pretty, Color, Timer
@@ -367,6 +368,51 @@ class WarpXml:
             d = d[k]
 
         return {e['@Name']: e['@Value'] for e in d}
+
+    def get(self, *keys, default=None):
+        """ Navigate the provided keys, '@Name' keys being attributes, and
+        return the value found or default if any key is missing. """
+        d = self._data
+        for k in keys:
+            if not isinstance(d, dict) or k not in d:
+                return default
+            d = d[k]
+        return d
+
+    def getGrid(self, *keys):
+        """ Values of a Warp CubicGrid element as an array (Depth, Height, Width). """
+        grid = self.get(*keys)
+        shape = [int(grid[f'@{k}']) for k in ('Depth', 'Height', 'Width')]
+        values = np.zeros(shape)
+        nodes = grid['Node']
+        for n in nodes if isinstance(nodes, list) else [nodes]:
+            values[int(n['@Z']), int(n['@Y']), int(n['@X'])] = float(n['@Value'])
+        return values
+
+    def getMovieMotion(self, earlyDose=4.0):
+        """ Accumulated motion of a movie's global trajectory, in the units
+        of Warp's movement grids (Å).
+
+        Returns a dict with 'total', 'early' and 'late'. Early is the motion
+        of the frames up to earlyDose e/Å² within the movie, as in RELION.
+        """
+        params = self.getDict('Movie', 'OptionsMovement', 'Param')
+        nFrames = int(float(params['Dimensions'].split(',')[2]))
+        xs = self.getGrid('Movie', 'GridMovementX').mean(axis=(1, 2))
+        ys = self.getGrid('Movie', 'GridMovementY').mean(axis=(1, 2))
+        if len(xs) != nFrames:
+            # Grid nodes are spline control points spread over the movie
+            t, tNodes = np.linspace(0, 1, nFrames), np.linspace(0, 1, len(xs))
+            xs, ys = np.interp(t, tNodes, xs), np.interp(t, tNodes, ys)
+
+        steps = np.hypot(np.diff(xs), np.diff(ys))
+        # Negative is Warp's convention for the dose of the whole movie
+        dose = float(params['DosePerAngstromFrame'])
+        frameDose = -dose / nFrames if dose < 0 else dose
+        priorDose = frameDose * np.arange(1, nFrames)
+        total = float(steps.sum())
+        early = float(steps[priorDose <= earlyDose].sum())
+        return {'total': total, 'early': early, 'late': total - early}
 
 
 class WarpSpecies(dict):

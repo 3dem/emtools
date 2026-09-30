@@ -24,7 +24,8 @@ from pprint import pprint
 from datetime import datetime
 
 from emtools.utils import Timer, Color, Pretty
-from emtools.metadata import StarFile, SqliteFile, EPU, StarMonitor, RelionStar, Table
+from emtools.metadata import (StarFile, SqliteFile, EPU, StarMonitor, RelionStar,
+                              Table, WarpXml)
 from emtools.jobs import BatchManager
 from emtools.tests import testpath
 
@@ -608,6 +609,73 @@ class TestEPU(unittest.TestCase):
             session = EPU.get_session_info(sessionPath)
             pprint(session)
 
+
+class TestWarpXml(unittest.TestCase):
+    """ Tests for WarpXml, on minimal movie xml files. """
+
+    @staticmethod
+    def _grid(tag, values, width=1, height=1):
+        depth = len(values) // (width * height)
+        nodes = ''.join(
+            f'<Node X="{i % width}" Y="{(i // width) % height}" '
+            f'Z="{i // (width * height)}" Value="{v}" />'
+            for i, v in enumerate(values))
+        return (f'<{tag} Width="{width}" Height="{height}" Depth="{depth}">'
+                f'{nodes}</{tag}>')
+
+    def _write(self, nFrames, dose, xs, ys, attrs='CTFResolutionEstimate="4.8"', **kw):
+        content = (
+            f'<Movie {attrs}><OptionsMovement>'
+            f'<Param Name="DosePerAngstromFrame" Value="{dose}" />'
+            f'<Param Name="Dimensions" Value="4096,4096,{nFrames}" />'
+            f'</OptionsMovement>'
+            f'{self._grid("GridMovementX", xs, **kw)}'
+            f'{self._grid("GridMovementY", ys, **kw)}</Movie>')
+        fd, fn = tempfile.mkstemp(suffix='.xml')
+        with os.fdopen(fd, 'w') as f:
+            f.write(content)
+        self.addCleanup(os.unlink, fn)
+        return WarpXml(fn)
+
+    def test_get(self):
+        xml = self._write(3, 1.0, [0, 0, 0], [0, 0, 0])
+        self.assertEqual(xml.get('Movie', '@CTFResolutionEstimate'), '4.8')
+        self.assertIsNone(xml.get('Movie', '@Missing'))
+        self.assertEqual(xml.get('Movie', 'Nope', 'Deeper', default=0), 0)
+
+    def test_getGrid(self):
+        # 2x1 spatial grid, 2 frames: layout is (Depth, Height, Width)
+        xml = self._write(2, 1.0, [1, 2, 3, 4], [0, 0, 0, 0], width=2)
+        grid = xml.getGrid('Movie', 'GridMovementX')
+        self.assertEqual(grid.shape, (2, 1, 2))
+        self.assertEqual(grid[1, 0, 0], 3)
+        self.assertEqual(grid[0, 0, 1], 2)
+
+    def test_movieMotion_early_late(self):
+        # Steps of 5, 0 and 5 Å; at 2 e/Å² per frame they follow 2, 4 and
+        # 6 e/Å² of prior dose, so only the last one is late.
+        xml = self._write(4, 2.0, [0, 3, 3, 0], [0, 4, 4, 0])
+        m = xml.getMovieMotion()
+        self.assertAlmostEqual(m['total'], 10.0)
+        self.assertAlmostEqual(m['early'], 5.0)
+        self.assertAlmostEqual(m['late'], 5.0)
+
+    def test_movieMotion_total_dose(self):
+        # A negative dose is for the whole movie: 3 e/Å² over 3 frames
+        xml = self._write(3, -3.0, [0, 1, 2], [0, 0, 0])
+        m = xml.getMovieMotion()
+        self.assertAlmostEqual(m['total'], 2.0)
+        self.assertAlmostEqual(m['early'], 2.0)
+        self.assertAlmostEqual(m['late'], 0.0)
+
+    def test_movieMotion_resampled(self):
+        # 2 control points over 5 frames: straight line, same path length
+        xml = self._write(5, 1.0, [0, 8], [0, 0])
+        self.assertAlmostEqual(xml.getMovieMotion()['total'], 8.0)
+
+    def test_movieMotion_single_node(self):
+        xml = self._write(1, 1.0, [0.5], [0.5])
+        self.assertEqual(xml.getMovieMotion()['total'], 0.0)
 
 
 class TestSqliteFile(unittest.TestCase):
