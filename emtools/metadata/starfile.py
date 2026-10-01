@@ -468,17 +468,37 @@ class StarMonitor:
     """
     Monitor a STAR file for changes and return new items in a given table.
 
-    This class will subclass OrderedDict to hold a clone of each new element.
-    It will also keep internally the last access timestamp to prevent loading
-    the STAR file if it has not been modified since the last check.
+    It will keep internally the last modification time of the file to
+    prevent loading the STAR file if it has not been modified since the
+    last check. The file might be written (appended or re-written) while
+    it is read, so reads that fail or where the file changed during the
+    read are discarded and retried in the next check.
     """
     def __init__(self, fileName, tableName, rowKeyFunc, **kwargs):
+        """
+        Args:
+            fileName: STAR file to monitor
+            tableName: table to read new rows from
+            rowKeyFunc: function returning a unique key for each row
+        Keyword Args:
+            wait: seconds to wait between checks (default 30)
+            timeout: stop after these seconds without new items (default 300)
+            blacklist: rows that will not be returned (e.g. already processed)
+            tableKwargs: dict with extra args to read the table
+                (e.g. {'guessType': False}, see StarFile.iterTable)
+            maxErrors: raise the reading error after these consecutive
+                failed reads (default 10)
+        """
         self._seenItems = set()
         self.fileName = fileName
         self._tableName = tableName
         self._rowKeyFunc = rowKeyFunc
         self._wait = kwargs.get('wait', 30)
         self._timeout = timedelta(seconds=kwargs.get('timeout', 300))
+        self._tableKwargs = kwargs.get('tableKwargs', {})
+        self._maxErrors = kwargs.get('maxErrors', 10)
+        self._errors = 0
+        self._lastMTime = None  # File modification time of last read
         self.lastCheck = None  # Last timestamp when input was checked
         self.lastUpdate = None  # Last timestamp when new items were found
 
@@ -490,20 +510,46 @@ class StarMonitor:
             for row in blacklist:
                 self._seenItems.add(self._rowKeyFunc(row))
 
+    def _readNewRows(self):
+        """ Read the table and return new rows (not marked as seen yet). """
+        newRows = []
+        newKeys = set()
+        with StarFile(self.fileName) as sf:
+            for row in sf.iterTable(self._tableName, **self._tableKwargs):
+                rowKey = self._rowKeyFunc(row)
+                if rowKey not in self._seenItems and rowKey not in newKeys:
+                    newKeys.add(rowKey)
+                    newRows.append(row)
+        return newRows, newKeys
+
     def update(self):
         newRows = []
 
         if os.path.exists(self.fileName):
             now = datetime.now()
-            mTime = datetime.fromtimestamp(os.path.getmtime(self.fileName))
+            mTime = os.path.getmtime(self.fileName)
 
-            if self.lastCheck is None or mTime > self.lastCheck:
-                with StarFile(self.fileName) as sf:
-                    for row in sf.iterTable(self._tableName):
-                        rowKey = self._rowKeyFunc(row)
-                        if rowKey not in self._seenItems:
-                            self._seenItems.add(rowKey)
-                            newRows.append(row)
+            if mTime != self._lastMTime:
+                try:
+                    newRows, newKeys = self._readNewRows()
+                    if os.path.getmtime(self.fileName) != mTime:
+                        # Modified while reading, read again in next check
+                        # (after the file is complete)
+                        newRows = []
+                    else:
+                        self._seenItems.update(newKeys)
+                        # With coarse mtime resolution (e.g. 1s in NFS), a
+                        # later write could keep the same mtime, so read
+                        # again if the file was modified very recently
+                        if time.time() - mTime > 2:
+                            self._lastMTime = mTime
+                    self._errors = 0
+                except Exception:
+                    # The file might be partially written, try in next check
+                    newRows = []
+                    self._errors += 1
+                    if self._errors >= self._maxErrors:
+                        raise
 
             self.lastCheck = now
             if newRows:
