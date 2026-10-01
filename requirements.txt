@@ -3,3 +3,4 @@ numpy
 Pillow>=9.0.1
 xmltodict
 psutil
+tifffile

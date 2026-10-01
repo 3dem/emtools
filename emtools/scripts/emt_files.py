@@ -18,6 +18,7 @@
 import os
 import time
 import argparse
+import json
 from glob import glob
 from datetime import datetime, timedelta
 from pprint import pprint
@@ -27,15 +28,112 @@ from emtools.utils import Process, Color, Path, Timer, Pretty
 from emtools.metadata import EPU, MovieFiles
 
 
+def scan_folder(folder):
+    """Scan a folder; return (files_dict, dirs_set).
+    files_dict: relative_path -> {size, mtime}
+    dirs_set: set of relative directory paths (including '.' for the root).
+    """
+    folder = os.path.abspath(os.path.expanduser(folder))
+    if not os.path.isdir(folder):
+        raise SystemExit(f"ERROR: Not a directory: {folder}")
+    files_result = {}
+    dirs_set = set()
+    for root, _dirs, files in os.walk(folder):
+        rel_root = os.path.relpath(root, folder)
+        if rel_root == '.':
+            dirs_set.add('.')
+        else:
+            dirs_set.add(rel_root)
+        for fn in files:
+            path = os.path.join(root, fn)
+            try:
+                st = os.stat(path)
+            except OSError:
+                continue
+            rel = os.path.relpath(path, folder)
+            files_result[rel] = {'size': st.st_size, 'mtime': st.st_mtime}
+    return files_result, dirs_set
+
+
+def scan_save(folder, output_path):
+    """Scan folder and write snapshot to a JSON file."""
+    files_snapshot, dirs_set = scan_folder(folder)
+    folder_abs = os.path.abspath(os.path.expanduser(folder))
+    data = {
+        'folder': folder_abs,
+        'scanned_at': datetime.now().isoformat(),
+        'files': files_snapshot,
+        'dirs': sorted(dirs_set),
+    }
+    output_path = os.path.abspath(os.path.expanduser(output_path))
+    os.makedirs(os.path.dirname(output_path) or '.', exist_ok=True)
+    with open(output_path, 'w') as f:
+        json.dump(data, f, indent=2)
+    print(f"Scan saved: {len(files_snapshot)} files, {len(dirs_set)} dirs -> {output_path}")
+
+
+def scan_compare(folder, compare_path):
+    """Scan folder and compare to a previously saved JSON snapshot."""
+    folder_abs = os.path.abspath(os.path.expanduser(folder))
+    compare_path = os.path.abspath(os.path.expanduser(compare_path))
+    if not os.path.isfile(compare_path):
+        raise SystemExit(f"ERROR: Compare file not found: {compare_path}")
+
+    with open(compare_path) as f:
+        data = json.load(f)
+    previous_files = data.get('files', data) if 'files' in data else data
+    if isinstance(previous_files, dict) and not previous_files and 'files' in data:
+        previous_files = data['files']
+    previous_dirs = set(data.get('dirs', []))
+
+    current_files, current_dirs = scan_folder(folder)
+    prev_file_keys = set(previous_files)
+    curr_file_keys = set(current_files)
+
+    new_files = sorted(curr_file_keys - prev_file_keys)
+    deleted_files = sorted(prev_file_keys - curr_file_keys)
+    modified = []
+    for k in sorted(prev_file_keys & curr_file_keys):
+        p, c = previous_files[k], current_files[k]
+        if p.get('size') != c.get('size') or p.get('mtime') != c.get('mtime'):
+            modified.append(k)
+
+    new_dirs = sorted(current_dirs - previous_dirs)
+    deleted_dirs = sorted(previous_dirs - current_dirs)
+
+    def _report(label, items, color_fn=Color.red):
+        if not items:
+            return
+        print(color_fn(f"\n{label} ({len(items)}):"))
+        for rel in items:
+            print(f"  {rel}")
+
+    print(f"Comparison: current scan vs {compare_path}")
+    print(f"  Files: previous {len(prev_file_keys)}  |  current {len(curr_file_keys)}")
+    print(f"  Dirs:  previous {len(previous_dirs)}  |  current {len(current_dirs)}")
+    _report("New folders", new_dirs, Color.green)
+    _report("Deleted folders", deleted_dirs, Color.red)
+    _report("New files", new_files, Color.green)
+    _report("Deleted files", deleted_files, Color.red)
+    _report("Modified files", modified, Color.red if modified else lambda x: x)
+
+    if not new_files and not deleted_files and not modified and not new_dirs and not deleted_dirs:
+        print(Color.green("\nNo changes detected."))
+
+
 def statsDir(folder, sort):
     df = MovieFiles()
     df.scan(folder)
     df.print(sort=sort)
-    df.counters[1].print('movie')
 
 
-def timeStats(pattern, bin, plot):
-    files = glob(pattern)
+def timeStats(pattern, bin, plot, data):
+    files = []
+    if os.path.isdir(pattern):
+        for root, dirs, dfiles in os.walk(pattern):
+            files.extend(os.path.join(root, fn) for fn in dfiles)
+    else:
+        files = glob(pattern)
     total_size = 0
     filesDict = {}
 
@@ -51,6 +149,8 @@ def timeStats(pattern, bin, plot):
     first = fs[0]
     last = fs[-1]
 
+    to_GB = 1 / (1024 ** 3)
+
     if bin:
         bindelta = timedelta(minutes=bin)
         start = datetime.fromtimestamp(first[1]['ts'])
@@ -60,7 +160,8 @@ def timeStats(pattern, bin, plot):
             end = last_bin['end']
             ts = datetime.fromtimestamp(v['ts'])
             if ts <= end:
-                last_bin['count'] += 1
+                value = 1 if not data else v['size'] * to_GB
+                last_bin['count'] += value
             else:
                 bins.append({'start': end,
                              'end': end + bindelta,
@@ -117,7 +218,8 @@ def timeStats(pattern, bin, plot):
         w = width * 0.9
         ax.bar(x + w / 2, values, w, label='Men')
         # Add some text for labels, title and custom x-axis tick labels, etc.
-        ax.set_ylabel('Files')
+        ylabel = 'Files' if not data else 'Data (Gb)'
+        ax.set_ylabel(ylabel)
         ax.set_title(f'Files generated every {bin} minutes')
         ax.set_xticks(x)
         ax.set_xticklabels(labels)
@@ -151,26 +253,46 @@ def main():
     g = p.add_mutually_exclusive_group()
     g.add_argument('--stats', '-s', metavar='FOLDER',
                    help="Statistics of the files in a given folder.")
-    g.add_argument('--timing', metavar='PATTERN',
+    g.add_argument('--timing', metavar='FOLDER_OR_PATTERN',
                    help="Compute histogram from the timestamps of files "
-                        "matching the pattern.")
+                        "in the folder or matching the pattern.")
+    g.add_argument('--count_movies', '-m', nargs='+', 
+                   help="Count number of movies for each input folder")
     g.add_argument('--copy_dir', nargs=2, metavar=('SRC_DIR', 'NEW_DIR'),
                    help='Copy directory with some delay')
     g.add_argument('--check_dirs', nargs=2, metavar=('DIR1', 'DIR2'),
                    help='Check if the two directories are synchronized. ')
+    g.add_argument('--rsync_dirs', nargs=2, metavar=('DIR1', 'DIR2'),
+                   help='Rsync both directories and print the number of '
+                        'transferred files. ')
+    g.add_argument('--scan', metavar='FOLDER',
+                   help='Scan folder. Use with --output to save snapshot to JSON, '
+                        'or with --compare to diff against a saved snapshot.')
+    g.add_argument('--relink', nargs=2, metavar=('OLD_PREFIX', 'NEW_PREFIX'),
+                   help='Relink the symbolic links in the current directory, changing the prefix to the new one')
+    g.add_argument('--transfer', nargs=3, metavar=('FRAMES_DIR', 'RAW_DIR', 'EPU_DIR'),
+                   help='REVIEW: Transfer files from FRAMES_DIR to RAW_DIR and EPU_DIR')
 
+    p.add_argument('--output', '-o', metavar='FILE',
+                   help='Save scan snapshot to this JSON file (with --scan)')
+    p.add_argument('--compare', '-c', metavar='FILE',
+                   help='Compare current scan to this JSON snapshot (with --scan)')
     p.add_argument('--bin', '-b', type=int, default=6000,
                    help="Create bins of the given time in minutes "
                         "(with --timing)")
     p.add_argument('--plot', '-p', action='store_true',
                    help="Plot the number of files per bin  "
-                        "(with --stats)")
+                        "(with --timing)")
+    p.add_argument('--data', '-a', action='store_true',
+                   help="Use file size for the timing plot")
     p.add_argument('--delay', '-d', type=float, default=0,
                    help="Delay in seconds when copying files "
                         "(with --copy_dir)")
     p.add_argument('--sort', choices=['count', 'size'],
                    help="Sort results from --stats with a folder"
                         "based on count or size (with --stats FOLDER)")
+    p.add_argument('--dry-run', action='store_true',
+                   help="Dry run, without actually performing the operation")
 
     args = p.parse_args()
 
@@ -214,8 +336,31 @@ def main():
         s = Color.green('in SYNC') if sync else Color.red('NOT in SYNC')
         print(f"Dirs are {s}")
 
+    elif dirs := args.count_movies:
+        maxlen = max(len(d) for d in dirs)
+        def _pad(s):
+            return (maxlen - len(s)) * ' ' + s
+
+        for d in dirs:
+            print(f"{_pad(d)}: {EPU.count_movies(d):>8}")
+
+    elif dirs := args.rsync_dirs:
+        n = Path.rsync(dirs[0], dirs[1], verbose=True)
+        print(f"Transferred files: {n}")
+
     elif pattern := args.timing:
-        timeStats(pattern, args.bin, args.plot)
+        timeStats(pattern, args.bin, args.plot, args.data)
+
+    elif folder := args.scan:
+        if args.output and args.compare:
+            p.error("--scan: use either --output or --compare, not both")
+        elif args.output:
+            scan_save(folder, args.output)
+        elif args.compare:
+            scan_compare(folder, args.compare)
+        else:
+            p.error("--scan requires either --output FILE (save snapshot) "
+                    "or --compare FILE (compare to snapshot)")
 
     # TODO: check from here
     elif args.transfer:
@@ -258,15 +403,31 @@ def main():
 
         pprint(epuData.info())
 
-    elif args.parse:
-        ed = Path.ExtDict()
-        for root, dirs, files in os.walk(args.parse):
-            for f in files:
-                srcFn = os.path.join(root, f)
-                if os.path.isfile(srcFn):
-                    ed.register(os.path.join(root, f))
-        ed.print()
+    # elif args.parse:
+    #     ed = Path.ExtDict()
+    #     for root, dirs, files in os.walk(args.parse):
+    #         for f in files:
+    #             srcFn = os.path.join(root, f)
+    #             if os.path.isfile(srcFn):
+    #                 ed.register(os.path.join(root, f))
+    #     ed.print()
 
+    elif args.relink:
+        old_prefix, new_prefix = args.relink
+        cwd = os.getcwd()
+        print(f"Relinking files in {cwd} from {old_prefix} to {new_prefix}")
+        for fn in os.listdir(cwd):
+            filepath = os.path.join(cwd, fn)
+            if os.path.islink(filepath):
+                target = os.readlink(filepath)
+                if target.startswith(old_prefix):
+                    new_target = target.replace(old_prefix, new_prefix)
+                    print(f"LINK: {Color.bold(filepath)}\n"
+                          f" OLD: {Color.red(target)}\n"
+                          f" NEW: {Color.green(new_target)}")
+                    if not args.dry_run:
+                        os.unlink(filepath)
+                        os.symlink(new_target, filepath)
 
 if __name__ == '__main__':
     main()

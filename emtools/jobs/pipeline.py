@@ -14,12 +14,8 @@
 # *
 # **************************************************************************
 
-import os
-import sys
 from collections import OrderedDict
 import threading
-import signal
-import traceback
 
 
 class Pipeline:
@@ -64,82 +60,86 @@ class TaskQueue:
     """ Queue of tasks where producers can deposit tasks and
     consumers can get it.
     """
-    def __init__(self):
+    def __init__(self, maxsize=None):
         self._activeGenerators = 0
-        self._condition = threading.Condition()
         self._tasks = []
+        self._maxsize = maxsize
+        self._lock = threading.Lock()  # Lock to access tasks
+        self._condEmpty = threading.Condition(self._lock)
+        self._condFull = threading.Condition(self._lock)
 
     def getTask(self, proc):
         """ This function should be called from a consumer of this
         output instance.
         """
-        self._condition.acquire()
+        with self._lock:
+            proc._print("Inside condition lock, queue._activeGenerators: ",
+                        self._activeGenerators)
+            doWait = True
+            task = None
 
-        proc._print("Inside condition lock, queue._activeGenerators: ",
-                    self._activeGenerators)
-        doWait = True
-        task = None
-
-        while doWait:
-            doWait = False
-            if self._tasks:
-                proc._print("There are tasks")
-                task = self._tasks.pop(0)
-            elif self._activeGenerators > 0:
-                proc._print("No tasks, but not Done, waiting...")
-                self._condition.wait()
-                doWait = True
-            else:
-                proc._print("No tasks and done, should return None task.")
-
-        self._condition.release()
+            while doWait:
+                doWait = False
+                if self._tasks:
+                    proc._print("There are tasks")
+                    task = self._tasks.pop(0)
+                    self._condFull.notify()
+                elif self._activeGenerators > 0:
+                    proc._print("No tasks, but not Done, waiting...")
+                    self._condEmpty.wait()
+                    doWait = True
+                else:
+                    proc._print("No tasks and done, should return None task.")
 
         # Return the task, either None if nothing else should be
         # done, or a task to be processed
         return task
 
-    def putTask(self, task):
+    def putTask(self, task, proc):
         """ This function should be used by subclasses of Output
         that produces items that will be used by consumers.
         """
-        self._condition.acquire()
-        self._tasks.append(task)
-        self._condition.notify()
-        self._condition.release()
+        with self._lock:
+            if self._maxsize and len(self._tasks) == self._maxsize:
+                self._condFull.wait()
+            self._tasks.append(task)
+            self._condEmpty.notify()
 
     def notifyGeneratorStarts(self):
         """ When this queue is associated to a generator, this method should be
         used to notify that the generator has started to run.
         """
-        self._condition.acquire()
-        self._activeGenerators += 1
-        self._condition.release()
+        with self._lock:
+            self._activeGenerators += 1
 
     def notifyGeneratorEnds(self):
         """ This function should be used by generators associated to this queue
         to notify that they are done and not more tasks will be produced.
         """
-        self._condition.acquire()
-        self._activeGenerators -= 1
-        if self._activeGenerators == 0:
-            self._condition.notifyAll()
-        self._condition.release()
+        with self._lock:
+            self._activeGenerators -= 1
+            if self._activeGenerators == 0:
+                self._condEmpty.notifyAll()
 
     def isDone(self):
-        self._condition.acquire()
-        is_done = self._activeGenerators == 0
-        self._condition.release()
+        with self._lock:
+            is_done = self._activeGenerators == 0
+
         return is_done
 
 
 class TaskGenerator(threading.Thread):
     def __init__(self, generator, outputQueue=None,
-                 name='', debug=False):
+                 name='', debug=False, queueMaxSize=None):
         """
         Params:
             generator: function generating new tasks
             outputQueue: queue to put new tasks.
                 If None, a new queue will be created
+            queueMaxSize: maximum number of task that can be in
+                output queue. After that, a call to putTask block
+                the generator. If outputQueue is not None, this
+                parameter is ignored.
         """
         threading.Thread.__init__(self)
         self.id = None
@@ -148,7 +148,7 @@ class TaskGenerator(threading.Thread):
         self._generator = generator
 
         if outputQueue is None:
-            self.outputQueue = TaskQueue()
+            self.outputQueue = TaskQueue(maxsize=queueMaxSize)
         else:
             self.outputQueue = outputQueue
 
@@ -156,8 +156,11 @@ class TaskGenerator(threading.Thread):
         self.outputQueue.notifyGeneratorStarts()
         self.id = threading.get_ident()
 
+        # self._print(">>>>>> Iterating generator tasks")
         for task in self._generator():
-            self.outputQueue.putTask(task)
+            # self._print(">>>>>>>> Got task: ", task['id'], "...putting it queue.")
+            self.outputQueue.putTask(task, self)
+            # self._print(">>>>>>>> SENT task: ", task['id'])
 
         self.outputQueue.notifyGeneratorEnds()
 
@@ -169,8 +172,10 @@ class TaskGenerator(threading.Thread):
 
 class TaskProcessor(TaskGenerator):
     def __init__(self, inputQueue, processor, outputQueue=None,
-                 name='', debug=False):
-        TaskGenerator.__init__(self, self._process, outputQueue, name, debug)
+                 name='', debug=False, queueMaxSize=None):
+        TaskGenerator.__init__(self, self._process,
+                               outputQueue=outputQueue, name=name,
+                               debug=debug, queueMaxSize=queueMaxSize)
         self._processor = processor
         self._inputQueue = inputQueue
 
@@ -185,72 +190,4 @@ class TaskProcessor(TaskGenerator):
             task = self._inputQueue.getTask(self)
 
         self._print("Got task: None")
-
-
-class ProcessingPipeline(Pipeline):
-    """ Subclass of Pipeline that is commonly used to run programs.
-
-    This class will define a workingDir (usually os.getcwd)
-    and an output dir where all output should be generated.
-    It will also add some helper functions to manipulate file
-    paths relative to the working dir.
-    """
-    def __init__(self, workingDir, outputDir, **kwargs):
-        Pipeline.__init__(self, **kwargs)
-        self.workingDir = self.__validate(workingDir, 'working')
-        self.outputDir = self.__validate(outputDir, 'output')
-
-    def __validate(self, path, key):
-        if not path:
-            raise Exception(f'Invalid {key} directory: {path}')
-        if not os.path.exists(path):
-            raise Exception(f'Non-existing {key} directory: {path}')
-
-        return path
-
-    def get_arg(self, argDict, key, envKey, default=None):
-        """ Get an argument from the argDict or from the environment.
-
-        Args:
-            argDict: arguments dict from where to get the 'key' value
-            key: string key of the argument name in argDict
-            envKey: string key of the environment variable
-            default: default value if not found in argDict or environ
-        """
-        return argDict.get(key, os.environ.get(envKey, default))
-
-    def join(self, *p):
-        return os.path.join(self.outputDir, *p)
-
-    def relpath(self, p):
-        return os.path.relpath(p, self.workingDir)
-
-    def prerun(self):
-        """ This method will be called before the run. """
-        pass
-
-    def postrun(self):
-        """ This method will be called after the run. """
-        pass
-
-    def __file(self, suffix):
-        with open(self.join(f'RELION_JOB_EXIT_{suffix}'), 'w'):
-            pass
-
-    def __abort(self, signum, frame):
-        self.__file('ABORTED')
-        sys.exit(0)
-
-    def run(self):
-        try:
-            signal.signal(signal.SIGINT, self.__abort)
-            signal.signal(signal.SIGTERM, self.__abort)
-            self.prerun()
-            Pipeline.run(self)
-            self.postrun()
-            self.__file('SUCCESS')
-        except Exception as e:
-            self.__file('FAILURE')
-            traceback.print_exc()
-
 
