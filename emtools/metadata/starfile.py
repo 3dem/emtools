@@ -471,8 +471,9 @@ class StarMonitor:
     It will keep internally the last modification time of the file to
     prevent loading the STAR file if it has not been modified since the
     last check. The file might be written (appended or re-written) while
-    it is read, so reads that fail or where the file changed during the
-    read are discarded and retried in the next check.
+    it is read: reads that fail are retried in the next check and, if the
+    file changed during the read, the last row (that might be incomplete)
+    is left for the next check.
     """
     def __init__(self, fileName, tableName, rowKeyFunc, **kwargs):
         """
@@ -510,17 +511,24 @@ class StarMonitor:
             for row in blacklist:
                 self._seenItems.add(self._rowKeyFunc(row))
 
-    def _readNewRows(self):
-        """ Read the table and return new rows (not marked as seen yet). """
-        newRows = []
-        newKeys = set()
+    def _readTable(self):
+        """ Read the table rows as (key, row) pairs. """
         with StarFile(self.fileName) as sf:
-            for row in sf.iterTable(self._tableName, **self._tableKwargs):
-                rowKey = self._rowKeyFunc(row)
-                if rowKey not in self._seenItems and rowKey not in newKeys:
-                    newKeys.add(rowKey)
-                    newRows.append(row)
-        return newRows, newKeys
+            return [(self._rowKeyFunc(row), row)
+                    for row in sf.iterTable(self._tableName, **self._tableKwargs)]
+
+    def _newRows(self, rows, skipLast=False):
+        """ Return rows not seen before and mark them as seen.
+        If skipLast, the last row is ignored (and not marked). """
+        if skipLast and rows:
+            rows = rows[:-1]
+
+        newRows = []
+        for rowKey, row in rows:
+            if rowKey not in self._seenItems:
+                self._seenItems.add(rowKey)
+                newRows.append(row)
+        return newRows
 
     def update(self):
         newRows = []
@@ -531,18 +539,16 @@ class StarMonitor:
 
             if mTime != self._lastMTime:
                 try:
-                    newRows, newKeys = self._readNewRows()
-                    if os.path.getmtime(self.fileName) != mTime:
-                        # Modified while reading, read again in next check
-                        # (after the file is complete)
-                        newRows = []
-                    else:
-                        self._seenItems.update(newKeys)
-                        # With coarse mtime resolution (e.g. 1s in NFS), a
-                        # later write could keep the same mtime, so read
-                        # again if the file was modified very recently
-                        if time.time() - mTime > 2:
-                            self._lastMTime = mTime
+                    rows = self._readTable()
+                    # If modified while reading, the last row might be
+                    # incomplete, so leave it for the next check
+                    modified = os.path.getmtime(self.fileName) != mTime
+                    newRows = self._newRows(rows, skipLast=modified)
+                    # With coarse mtime resolution (e.g. 1s in NFS), a
+                    # later write could keep the same mtime, so read
+                    # again if the file was modified very recently
+                    if not modified and time.time() - mTime > 2:
+                        self._lastMTime = mTime
                     self._errors = 0
                 except Exception:
                     # The file might be partially written, try in next check
