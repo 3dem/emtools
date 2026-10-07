@@ -52,7 +52,8 @@ class Args(dict):
 
     @staticmethod
     def fromList(iterable):
-        r = re.compile(r"^-{1,2}[a-zA-Z][a-zA-Z0-9_-]+$")
+        # Also single letter options (e.g. Relion's --K or cryolo's -t)
+        r = re.compile(r"^-{1,2}[a-zA-Z][a-zA-Z0-9_-]*$")
         def _is_arg(v):
             return r.match(v) is not None
 
