@@ -232,6 +232,10 @@ class Batch(dict, FolderManager):
         If cwd is a string, call the program from that directory.
         If cwd is False, use the current working directory.
 
+        The command is written to the log file (by default batch.log), in a
+        way that it can be copied to re-run it manually (see logCommand),
+        followed by the program output and its exit code.
+
         Returns the exit code of the program.
         """
         if isinstance(kwargs, dict):
@@ -243,17 +247,45 @@ class Batch(dict, FolderManager):
         else:
             raise Exception("Expecting dict or list as arguments")
 
-        args.insert(0, program)
+        args = [str(a) for a in [program] + args]
         logfile = logfile or self.join('batch.log')
+        workDir = os.getcwd() if cwd is False else (self.path if cwd is True else cwd)
 
+        self.log(f"{Color.green(args[0])} {Color.bold(shlex.join(args[1:]))}")
         with open(logfile, 'a') as f:
-            cmd = self.log(f"{Color.green(args[0])} {Color.bold(' '.join(args[1:]))}")
-            f.write(f"\n{cmd}\n")
+            f.write(self._commandText(args, workDir))
             f.flush()
-            kwargs = {'stderr': f, 'stdout': f}
-            if cwd is not False:
-                kwargs['cwd'] = self.path if cwd is True else cwd
-            return subprocess.call(args, **kwargs)
+            returncode = subprocess.call(args, stderr=f, stdout=f, cwd=workDir)
+            f.write(f"# Exit code: {returncode}\n")
+            return returncode
+
+    def _commandText(self, args, cwd, input=None):
+        """ Command text to re-run it: cd to the working dir and run the
+        command (quoted arguments), with the standard input if any. """
+        cmd = f"cd {shlex.quote(os.path.abspath(cwd))} && {shlex.join(args)}"
+        if input is not None:
+            cmd += f" <<'EOF'\n{input.rstrip()}\nEOF"
+        return f"\n# {Pretty.now()}{self._logId} command:\n{cmd}\n"
+
+    def logCommand(self, args, cwd=None, input=None, returncode=None,
+                   output=None, logfile=None):
+        """ Write to the log file (by default batch.log) a command executed
+        outside this batch's call method, e.g. one that needs its output.
+
+        Args:
+            args: command arguments, including the program
+            cwd: working directory where the command was run (default: current)
+            input: text passed as standard input
+            returncode: exit code of the command
+            output: output of the command (e.g. stdout and stderr)
+        """
+        args = [str(a) for a in args]
+        with open(logfile or self.join('batch.log'), 'a') as f:
+            f.write(self._commandText(args, cwd or os.getcwd(), input=input))
+            if output:
+                f.write(output if output.endswith('\n') else output + '\n')
+            if returncode is not None:
+                f.write(f"# Exit code: {returncode}\n")
 
     def tic(self, prefix=''):
         self._timer.tic()
