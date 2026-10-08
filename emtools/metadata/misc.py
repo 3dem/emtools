@@ -358,15 +358,42 @@ class WarpXml:
     def __init__(self, xmlPath):
         with open(xmlPath) as f:
             self._data = xmltodict.parse(f.read())
+        # Root element name, e.g. 'Movie' or 'TiltSeries'
+        self.root = next(iter(self._data))
+
+    def _get(self, *keys):
+        d = self._data
+        for k in keys:
+            d = d[k]
+        return d
 
     def getDict(self, *keys):
         """ Navigate the provided keys and get a dict from Name=Value pairs.
         """
-        d = self._data
-        for k in keys:
-            d = d[k]
+        return {e['@Name']: e['@Value'] for e in self._get(*keys)}
 
-        return {e['@Name']: e['@Value'] for e in d}
+    def getAttributes(self, *keys):
+        """ Return the attributes of the element at the provided keys
+        (the root element if no keys are given) as a dict. """
+        d = self._get(*(keys or (self.root,)))
+        return {k[1:]: v for k, v in d.items() if k.startswith('@')}
+
+    def getValues(self, *keys):
+        """ Return the whitespace-separated values in the text of the
+        element at the provided keys, e.g. ('TiltSeries', 'UseTilt'). """
+        d = self._get(*keys)
+        text = d.get('#text', '') if isinstance(d, dict) else d
+        return (text or '').split()
+
+    def isSelected(self):
+        """ Return False if the item (movie or tilt series) is deselected in
+        Warp, either manually or by Warp filters. UnselectManual, when set,
+        overrides UnselectFilter. """
+        attrs = self.getAttributes()
+        manual = attrs.get('UnselectManual') or 'null'
+        if manual != 'null':
+            return manual != 'True'
+        return attrs.get('UnselectFilter', 'False') != 'True'
 
 
 class WarpSpecies(dict):
