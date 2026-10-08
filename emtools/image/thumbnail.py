@@ -1,8 +1,6 @@
 # **************************************************************************
 # *
-# * Authors:     J.M. De la Rosa Trevin (delarosatrevin@scilifelab.se) [1]
-# *
-# * [1] SciLifeLab, Stockholm University
+# * Authors:     J.M. de la Rosa Trevin (delarosatrevin@gmail.com)
 # *
 # * This program is free software; you can redistribute it and/or modify
 # * it under the terms of the GNU General Public License as published by
@@ -14,22 +12,21 @@
 # * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # * GNU General Public License for more details.
 # *
-# * You should have received a copy of the GNU General Public License
-# * along with this program; if not, write to the Free Software
-# * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
-# * 02111-1307  USA
-# *
-# *  All comments concerning this program package may be sent to the
-# *  e-mail address 'delarosatrevin@scilifelab.se'
-# *
 # **************************************************************************
 
+from doctest import OutputChecker
 import io
 import numpy as np
 import base64
 import mrcfile
+import tifffile
 
-from PIL import Image, ImageOps, ImageFilter
+import PIL
+from PIL import ImageFilter, ImageOps
+
+from emtools.datatypes import STACK_2D, VOLUME
+
+from emtools.utils import Path, Pretty
 
 
 class Thumbnail:
@@ -48,7 +45,6 @@ class Thumbnail:
         self.output_format = kwargs.get('output_format', None)
         self.min_max = kwargs.get('min_max', None)
         self.std_threshold = kwargs.get('std_threshold', 0)
-
 
     def __format(self, pil_img):
         format = self.output_format
@@ -82,7 +78,8 @@ class Thumbnail:
             pil_img = ImageOps.autocontrast(pil_img, cutoff=self.contrast_factor)
 
         if self.gaussian_radius is not None:
-            pil_img = pil_img.filter(ImageFilter.GaussianBlur(radius=self.gaussian_radius))
+            pil_img = pil_img.filter(
+                ImageFilter.GaussianBlur(radius=self.gaussian_radius))
 
         return self.__format(pil_img)
 
@@ -90,7 +87,7 @@ class Thumbnail:
         """ Read the image path as a PIL image and encode it as base64.
         """
         try:
-            img = Image.open(path)
+            img = PIL.Image.open(path)
             encoded = self.from_pil(img)
             img.close()
         except:
@@ -105,7 +102,7 @@ class Thumbnail:
             array = imageArray
         else:
             if self.std_threshold > 0:
-                array = np.array(imageArray)
+                array = np.asarray(imageArray, dtype=np.float64)
                 imean = array.mean()
                 isd = array.std()
                 isdTh = self.std_threshold * isd
@@ -121,7 +118,7 @@ class Thumbnail:
 
         im255 = ((array - iMin) / (iMax - iMin) * 255).astype(np.uint8)
 
-        pil_img = Image.fromarray(im255)
+        pil_img = PIL.Image.fromarray(im255)
 
         return self.from_pil(pil_img)
 
@@ -143,8 +140,8 @@ class Thumbnail:
 
     @staticmethod
     def Micrograph(**kwargs):
-        """ Shortcut method with presets for Micrograph thumbail.
-        All settings can be overwriten with kwargs.
+        """ Shortcut method with presets for Micrograph thumbnail.
+        All settings can be overwritten with kwargs.
         """
         defaults = {
             'output_format': 'base64',
@@ -157,8 +154,8 @@ class Thumbnail:
 
     @staticmethod
     def Psd(**kwargs):
-        """ Shortcut method with presets for PSD thumbails.
-        All settings can be overwriten with kwargs.
+        """ Shortcut method with presets for PSD thumbnails.
+        All settings can be overwritten with kwargs.
         """
         defaults = {
             'output_format': 'base64',
@@ -168,3 +165,304 @@ class Thumbnail:
         defaults.update(kwargs)
         return Thumbnail(**defaults)
 
+    @staticmethod
+    def _preview_stack_indices(n):
+        """Return 4 frame indices: first, two equally spaced, last."""
+        if n <= 1:
+            return [0, 0, 0, 0]
+        if n == 2:
+            return [0, 0, 1, 1]
+        if n == 3:
+            return [0, 1, 1, 2]
+        return [
+            0,
+            int(round((n - 1) / 3)),
+            int(round(2 * (n - 1) / 3)),
+            n - 1,
+        ]
+
+    @staticmethod
+    def _array_to_uint8(array):
+        i_min = array.min()
+        i_max = array.max()
+        if i_max == i_min:
+            return np.zeros(array.shape, dtype=np.uint8)
+        return ((array - i_min) / (i_max - i_min) * 255).astype(np.uint8)
+
+    @staticmethod
+    def _montage_grid(pil_images, cols, pad=2, bg_color=(255, 255, 255)):
+        w, h = pil_images[0].size
+        rows = (len(pil_images) + cols - 1) // cols
+        canvas_w = cols * w + (cols + 1) * pad
+        canvas_h = rows * h + (rows + 1) * pad
+        montage = PIL.Image.new('RGB', (canvas_w, canvas_h), bg_color)
+
+        for i, img in enumerate(pil_images):
+            row, col = divmod(i, cols)
+            x = pad + col * (w + pad)
+            y = pad + row * (h + pad)
+            if img.mode != 'RGB':
+                img = img.convert('RGB')
+            montage.paste(img, (x, y))
+
+        return montage
+
+    @staticmethod
+    def _volume_slice_montage(data):
+        im255 = Thumbnail._array_to_uint8(data)
+        _, y, x = im255.shape
+        z = im255.shape[0]
+
+        ximg = PIL.Image.fromarray(im255[:, :, x // 2])
+        yimg = PIL.Image.fromarray(im255[:, y // 2, :])
+        zimg = PIL.Image.fromarray(im255[z // 2, :, :])
+
+        xw, xh = ximg.size
+        yw, yh = yimg.size
+        pad = 2
+        canvas_w = (xw + yw) + (3 * pad)
+        canvas_h = (xh + yh) + (3 * pad)
+        montage = PIL.Image.new('RGB', (canvas_w, canvas_h), (255, 255, 255))
+
+        montage.paste(ximg.convert('RGB'), (pad, pad))
+        montage.paste(zimg.convert('RGB'), (pad, xh + 2 * pad))
+        montage.paste(yimg.convert('RGB'), (xw + 2 * pad, xh + 2 * pad))
+
+        return montage
+
+    @staticmethod
+    def _stack_frame_montage(data):
+        n = data.shape[0]
+        im255 = Thumbnail._array_to_uint8(data)
+        indices = Thumbnail._preview_stack_indices(n)
+        images = [PIL.Image.fromarray(im255[i, :, :]) for i in indices]
+        return Thumbnail._montage_grid(images, cols=2)
+
+    @staticmethod
+    def _mrc_is_stack(mrc, image_lower):
+        if image_lower.endswith('.mrcs'):
+            return True
+        if len(mrc.data.shape) < 3:
+            return False
+        if mrc.is_volume():
+            return False
+        if mrc.is_image_stack():
+            return True
+        return True
+
+    @staticmethod
+    def Preview(imagePath, **kwargs):
+        imageLower = imagePath.lower()
+        thumb = Thumbnail.Micrograph(max_size=(256, 256))
+
+        if not (Path.isImage(imagePath) or Path.isEmImage(imagePath)):
+            raise Exception("Can not generate preview for: %s" % imagePath)
+
+        if Path.isImage(imagePath):
+            return thumb.from_path(imagePath)
+
+        if imageLower.endswith('.mrc') or imageLower.endswith('.mrcs'):
+            with mrcfile.open(imagePath, permissive=True) as mrc:
+                data = mrc.data
+                if len(data.shape) == 2:
+                    return thumb.from_array(data)
+
+                if len(data.shape) != 3:
+                    raise Exception("Invalid dimensions: %s" % (data.shape,))
+
+                preview_thumb = Thumbnail(
+                    max_size=(256, 256), output_format='base64')
+
+                if Thumbnail._mrc_is_stack(mrc, imageLower):
+                    montage = Thumbnail._stack_frame_montage(data)
+                else:
+                    montage = Thumbnail._volume_slice_montage(data)
+
+                return preview_thumb.from_pil(montage)
+
+        raise Exception("Can not generate preview for: %s" % imagePath)
+
+
+class Image:
+    @staticmethod
+    def _mrc_data_type(mrc, image_lower):
+        if image_lower.endswith('.mrcs'):
+            return STACK_2D
+        if mrc.is_volume():
+            return VOLUME
+        if mrc.is_image_stack():
+            return STACK_2D
+        return None
+
+    @staticmethod
+    def get_metadata(imagePath):
+        """Return structured metadata for EM image files, or None."""
+        imageLower = imagePath.lower()
+        if imageLower.endswith('.mrc') or imageLower.endswith('.mrcs'):
+            with mrcfile.open(imagePath) as mrc:
+                dims = mrc.data.shape[::-1]
+                if len(dims) == 2:
+                    x, y = dims
+                    return {
+                        'info': f'{x} x {y}',
+                    }
+                if len(dims) == 3:
+                    x, y, third = dims
+                    is_cube = x == y == third
+                    data_type = VOLUME if is_cube else Image._mrc_data_type(mrc, imageLower)
+                    if data_type == VOLUME:
+                        return {
+                            'dataType': data_type,
+                            'info': f'{x} x {y} x {third}',
+                        }
+                    return {
+                        'dataType': STACK_2D,
+                        'info': f'{x} x {y} x {third}',
+                    }
+            return None
+
+        if (imageLower.endswith('.tif') or
+                imageLower.endswith('.tiff') or
+                imageLower.endswith('.eer') or
+                imageLower.endswith('.gain')):
+            dims = Image.get_dimensions(imagePath)
+            if len(dims) == 2:
+                x, y = dims
+                return {
+                    'info': f'{x} x {y}',
+                }
+            if len(dims) == 3:
+                x, y, n = dims
+                return {
+                    'dataType': STACK_2D,
+                    'info': f'{x} x {y} x {n}',
+                }
+        return None
+
+    @staticmethod
+    def get_dimensions(imagePath):
+        imageLower = imagePath.lower()
+        if imageLower.endswith('.mrc') or imageLower.endswith('.mrcs'):
+            with mrcfile.open(imagePath) as mrc:
+                return mrc.data.shape[::-1]  # in reverse order
+        elif (imageLower.endswith('.tif') or
+              imageLower.endswith('.tiff') or
+              imageLower.endswith('.eer') or
+              imageLower.endswith('.gain')):
+            with tifffile.TiffFile(imagePath) as tif:
+                n = len(tif.pages)
+                y, x = tif.pages[0].shape
+                return (x, y, n) if n > 1 else (x, y)
+
+    @staticmethod
+    def get_array(imagePath):
+        imageLower = imagePath.lower()
+        if imageLower.endswith('.mrc') or imageLower.endswith('.mrcs'):
+            with mrcfile.open(imagePath) as mrc:
+                return mrc.data
+        elif (imageLower.endswith('.tif') or
+              imageLower.endswith('.tiff') or
+              imageLower.endswith('.eer') or
+              imageLower.endswith('.gain')):
+            with tifffile.TiffFile(imagePath) as tif:
+                return tif.asarray()
+        return None
+
+    @staticmethod
+    def _fourier_output_size(size, scale):
+        """Return rounded output size for a given scale factor."""
+        return max(1, int(round(size * scale)))
+
+    @staticmethod
+    def _fourier_axis_slices(in_size, out_size):
+        """Return source/destination slices for DC-centered crop or pad.
+
+        The DC component lives at in_size // 2 in the shifted spectrum, so the
+        crop/pad is centered there rather than on the array geometric center.
+        This keeps even and odd input/output sizes aligned correctly.
+        """
+        if out_size <= in_size:
+            src_start = in_size // 2 - out_size // 2
+            dst_start = 0
+            length = out_size
+        else:
+            src_start = 0
+            dst_start = out_size // 2 - in_size // 2
+            length = in_size
+        return src_start, dst_start, length
+
+    @staticmethod
+    def _is_volume(imagePath, array):
+        """Return True when a 3D array should be treated as a volume."""
+        if array.ndim != 3:
+            return False
+
+        if Path.exists(imagePath):
+            metadata = Image.get_metadata(imagePath)
+            if metadata and metadata.get('dataType') == VOLUME:
+                return True
+
+        z, y, x = array.shape
+        return z == y == x
+
+    @staticmethod
+    def _fourier_rescale(image, scale):
+        """Resize an n-D image by Fourier cropping or zero-padding."""
+        shape = image.shape
+        new_shape = tuple(Image._fourier_output_size(s, scale) for s in shape)
+
+        if new_shape == shape:
+            return np.array(image, copy=True)
+
+        spectrum = np.fft.fftshift(np.fft.fftn(image))
+        resized = np.zeros(new_shape, dtype=spectrum.dtype)
+
+        src_slices = []
+        dst_slices = []
+        for in_size, out_size in zip(shape, new_shape):
+            src_start, dst_start, length = Image._fourier_axis_slices(
+                in_size, out_size)
+            src_slices.append(slice(src_start, src_start + length))
+            dst_slices.append(slice(dst_start, dst_start + length))
+
+        resized[tuple(dst_slices)] = spectrum[tuple(src_slices)]
+
+        # Preserve average intensity when changing the number of pixels.
+        amp = np.prod(new_shape) / np.prod(shape)
+        result = np.real(np.fft.ifftn(np.fft.ifftshift(resized * amp)))
+
+        if np.issubdtype(image.dtype, np.floating):
+            return result.astype(image.dtype, copy=False)
+        return result
+
+    @staticmethod
+    def fourier_crop(imagePath, scale):
+        """Resize an image by Fourier cropping or padding.
+
+        Args:
+            imagePath: Path to a supported image file.
+            scale: Output-size multiplier per axis (e.g. 0.5 halves the size).
+
+        Returns:
+            Rescaled numpy array with the same dimensionality as the input.
+        """
+        array = Image.get_array(imagePath)
+        if array is None:
+            raise ValueError("Unsupported image format: %s" % imagePath)
+        if scale <= 0:
+            raise ValueError("Scale must be positive, got: %s" % scale)
+
+        if array.ndim == 2:
+            return Image._fourier_rescale(array, scale)
+
+        if array.ndim == 3:
+            if Image._is_volume(imagePath, array):
+                return Image._fourier_rescale(array, scale)
+
+            return np.stack(
+                [Image._fourier_rescale(array[i], scale)
+                 for i in range(array.shape[0])],
+                axis=0,
+            )
+
+        raise ValueError("Expected 2D or 3D image, got shape: %s" % (array.shape,))
