@@ -409,6 +409,8 @@ class WarpXml:
     def getGrid(self, *keys):
         """ Values of a Warp CubicGrid element as an array (Depth, Height, Width). """
         grid = self.get(*keys)
+        if not isinstance(grid, dict):
+            raise KeyError(f"No CubicGrid at {'/'.join(keys)}")
         shape = [int(grid[f'@{k}']) for k in ('Depth', 'Height', 'Width')]
         values = np.zeros(shape)
         nodes = grid['Node']
