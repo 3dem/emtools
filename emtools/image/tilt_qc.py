@@ -11,8 +11,9 @@
 # * GNU General Public License for more details.
 # *
 # **************************************************************************
-""" Image content measures of the tilts of a tilt series, from the 512 px
-tilt jpegs emwrap writes into 'thumbnails' folders.
+""" Image content measures of the tilts of a tilt series, from their jpegs
+(emtools.image.thumbnail.TiltThumbnails: the size and recipe the measures
+were calibrated on), and the curation rule.
 
 What curators reject a tilt for is mostly in the image: blank, partly
 blacked out (a lamella edge or a grid bar), or showing another area.  For
@@ -47,15 +48,15 @@ import sys
 import json
 import glob
 import argparse
-import threading
 
 import numpy as np
 from PIL import Image as PILImage
 
+from .thumbnail import TiltThumbnails
+
 VERSION = 1
 SUFFIX = '_imageqc.json'
 MEASURES = ('texture', 'darkArea', 'matchPeak', 'matchNcc', 'fieldShift')
-THUMBNAILS_DIR = 'thumbnails'
 
 N = 128            # side of the images compared, px
 BLOCK = 16         # px, for texture and darkArea
@@ -68,45 +69,6 @@ _KY, _KX = np.meshgrid(np.fft.fftfreq(N), np.fft.fftfreq(N), indexing='ij')
 # high-pass: smooth shading (a dark corner) must not drive the match
 _HIGHPASS = 1 - np.exp(-(_KX ** 2 + _KY ** 2) / (2 * 0.02 ** 2))
 _WINDOW = np.outer(np.hanning(N), np.hanning(N))
-
-
-def _tmp_path(path):
-    """ A temporary file beside path, unique per process and thread, for
-    writing then renaming. """
-    return f'{path}.{os.getpid()}.{threading.get_ident()}.tmp'
-
-
-def thumbnails_dir(path):
-    """ Where emwrap writes the jpegs and jsons of the files in path's
-    folder (tilt averages, power spectra): 'thumbnails' beside it. """
-    return os.path.join(os.path.dirname(os.path.dirname(path)), THUMBNAILS_DIR)
-
-
-def tilt_jpeg(data, size=512):
-    """ The jpeg image (PIL) of a tilt average, as emwrap writes them and
-    the measures were calibrated on: block-averaged to about twice the
-    size, which removes most of the shot noise, then contrast-stretched
-    and lightly blurred. """
-    from .thumbnail import Thumbnail
-    f = max(1, max(data.shape) // (2 * size))
-    h, w = (data.shape[0] // f) * f, (data.shape[1] // f) * f
-    binned = data[:h, :w].astype(np.float32).reshape(h // f, f, w // f, f).mean(axis=(1, 3))
-    return Thumbnail(output_format=None, max_size=(size, size), std_threshold=2,
-                     contrast_factor=0.5, gaussian_radius=1.0).from_array(binned)
-
-
-def write_tilt_jpeg(mrcPath, jpegPath, size=512):
-    """ Write the jpeg of a tilt average unless it is newer than the MRC;
-    written then renamed, so a reader never gets a partial file.  Returns
-    True if it was written. """
-    if os.path.exists(jpegPath) and os.path.getmtime(jpegPath) >= os.path.getmtime(mrcPath):
-        return False
-    from .thumbnail import Image
-    img = tilt_jpeg(Image.get_array(mrcPath), size)
-    tmp = _tmp_path(jpegPath)
-    img.save(tmp, format='JPEG', quality=80)
-    os.replace(tmp, jpegPath)
-    return True
 
 
 def load_jpeg(path):
@@ -333,8 +295,7 @@ def write_series_json(path, tomo_name, tilts, force=False):
     which is how readers match a tilt) and 'jpeg' (path, None for a tilt
     without an average: left out).  Returns (rows, written): the measures,
     None if no jpeg exists.  Written to a temporary file then renamed, so a
-    reader never gets a partial file; the temporary file is created with
-    open() so the folder's default ACL applies.
+    reader never gets a partial file.
     """
     tilts = [t for t in tilts if t.get('jpeg')]
     if not any(os.path.exists(t['jpeg']) for t in tilts):
@@ -348,24 +309,10 @@ def write_series_json(path, tomo_name, tilts, force=False):
              image=load_jpeg(t['jpeg']) if os.path.exists(t['jpeg']) else None)
         for t in tilts])
     data = {'version': VERSION, 'tomoName': tomo_name,
-            'source': 'tilt jpegs', 'blockSize': BLOCK, 'darkLevel': DARK_LEVEL,
-            'tilts': rows}
-    tmp = _tmp_path(path)
-    with open(tmp, 'w') as f:
-        json.dump(data, f)
-    os.replace(tmp, path)
+            'source': 'tilt jpegs', 'jpegSize': TiltThumbnails.SIZE,
+            'blockSize': BLOCK, 'darkLevel': DARK_LEVEL, 'tilts': rows}
+    TiltThumbnails.save_json(data, path)
     return rows, True
-
-
-def read_ctf_correlation(psPath):
-    """ The CTF profile correlation emwrap writes for a power spectrum,
-    <ps name>_ctf.json in the thumbnails folder, or None. """
-    name = os.path.splitext(os.path.basename(psPath))[0] + '_ctf.json'
-    try:
-        with open(os.path.join(thumbnails_dir(psPath), name)) as f:
-            return json.load(f).get('correlation')
-    except (OSError, ValueError, AttributeError):
-        return None
 
 
 def _star_float(d, key, placeholder_zero=False):
@@ -378,17 +325,19 @@ def _star_float(d, key, placeholder_zero=False):
     return None if placeholder_zero and v == 0 else v
 
 
-def tilts_from_star_rows(rows, root='', ctf_correlation=True):
+def tilts_from_star_rows(rows, root='', ctf_correlation=True, thumbnails=None):
     """ The tilts of a tilt series star file as the measures and the rule
     take them: 'movie', 'angle', 'name' (micrograph base name), 'mic' and
-    'jpeg' (the tilt average and where emwrap writes its jpeg, both None
-    without an average), the star values of the rule (placeholder zeros as
-    None) and the CTF profile correlation.
+    'jpeg' (the tilt average and its jpeg, TiltThumbnails; None without an
+    average, or the jpeg None if the average is not in a job folder), the
+    star values of the rule (placeholder zeros as None) and the CTF profile
+    correlation.
 
     rows: dicts of the star rows (values as strings or numbers); root: what
     the paths in them are relative to; ctf_correlation: whether to read
-    the _ctf.json of each tilt.  Raises ValueError without the movie index
-    or the tilt angle.
+    the _ctf.json of each tilt; thumbnails: the folder of the jpegs and
+    jsons, by default the one of the job of each file.  Raises ValueError
+    without the movie index or the tilt angle.
     """
     tilts = []
     for d in rows:
@@ -399,20 +348,22 @@ def tilts_from_star_rows(rows, root='', ctf_correlation=True):
         mic = d.get('rlnMicrographName')
         mic = None if mic in (None, '', 'None') else mic
         ps = d.get('rlnCtfPowerSpectrum')
+        ps = None if ps in (None, '', 'None') else ps
         name = os.path.splitext(os.path.basename(mic or d.get('rlnMicrographMovieName') or ''))[0]
+        jpeg = TiltThumbnails.tilt_jpeg(mic, thumbnails) if mic else None
         tilts.append({
             'movie': int(float(d['rlnTomoTiltMovieIndex'])),
             'angle': float(d['rlnTomoNominalStageTiltAngle']),
             'name': name,
             'mic': os.path.join(root, mic) if mic else None,
-            'jpeg': os.path.join(root, thumbnails_dir(mic), name + '.jpg') if mic else None,
+            'jpeg': os.path.join(root, jpeg) if jpeg else None,
             'motion': _star_float(d, 'rlnAccumMotionTotal', True),
             'ctfResolution': _star_float(d, 'rlnCtfMaxResolution', True),
             'figureOfMerit': _star_float(d, 'rlnCtfFigureOfMerit', True),
             'astigmatism': _star_float(d, 'rlnCtfAstigmatism'),
             'defocus': _star_float(d, 'rlnDefocusU'),
-            'ctfCorrelation': (read_ctf_correlation(os.path.join(root, ps))
-                               if ctf_correlation and ps not in (None, '', 'None') else None),
+            'ctfCorrelation': (TiltThumbnails.read_ctf_correlation(os.path.join(root, ps), thumbnails)
+                               if ctf_correlation and ps else None),
         })
     return tilts
 

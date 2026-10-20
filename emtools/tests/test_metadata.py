@@ -651,31 +651,19 @@ class TestWarpXml(unittest.TestCase):
         self.assertEqual(grid[1, 0, 0], 3)
         self.assertEqual(grid[0, 0, 1], 2)
 
-    def test_movieMotion_early_late(self):
-        # Steps of 5, 0 and 5 Å; at 2 e/Å² per frame they follow 2, 4 and
-        # 6 e/Å² of prior dose, so only the last one is late.
+    def test_movieMotion(self):
+        # Steps of 5, 0 and 5 Å: the length of the path
         xml = self._write(4, 2.0, [0, 3, 3, 0], [0, 4, 4, 0])
-        m = xml.getMovieMotion()
-        self.assertAlmostEqual(m['total'], 10.0)
-        self.assertAlmostEqual(m['early'], 5.0)
-        self.assertAlmostEqual(m['late'], 5.0)
-
-    def test_movieMotion_total_dose(self):
-        # A negative dose is for the whole movie: 3 e/Å² over 3 frames
-        xml = self._write(3, -3.0, [0, 1, 2], [0, 0, 0])
-        m = xml.getMovieMotion()
-        self.assertAlmostEqual(m['total'], 2.0)
-        self.assertAlmostEqual(m['early'], 2.0)
-        self.assertAlmostEqual(m['late'], 0.0)
+        self.assertAlmostEqual(xml.getMovieMotion(), 10.0)
 
     def test_movieMotion_resampled(self):
         # 2 control points over 5 frames: straight line, same path length
         xml = self._write(5, 1.0, [0, 8], [0, 0])
-        self.assertAlmostEqual(xml.getMovieMotion()['total'], 8.0)
+        self.assertAlmostEqual(xml.getMovieMotion(), 8.0)
 
     def test_movieMotion_single_node(self):
         xml = self._write(1, 1.0, [0.5], [0.5])
-        self.assertEqual(xml.getMovieMotion()['total'], 0.0)
+        self.assertEqual(xml.getMovieMotion(), 0.0)
 
 
 class TestSqliteFile(unittest.TestCase):

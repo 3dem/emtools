@@ -15,8 +15,8 @@
 # **************************************************************************
 
 
-from .thumbnail import Thumbnail, Image
+from .thumbnail import Thumbnail, TiltThumbnails, Image
 from emtools.datatypes import STACK_2D, VOLUME
 
 
-__all__ = ["Thumbnail", "Image", "STACK_2D", "VOLUME"]
+__all__ = ["Thumbnail", "TiltThumbnails", "Image", "STACK_2D", "VOLUME"]

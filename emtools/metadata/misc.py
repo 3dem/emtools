@@ -418,30 +418,25 @@ class WarpXml:
             values[int(n['@Z']), int(n['@Y']), int(n['@X'])] = float(n['@Value'])
         return values
 
-    def getMovieMotion(self, earlyDose=4.0):
-        """ Accumulated motion of a movie's global trajectory, in the units
-        of Warp's movement grids (Å).
+    def getMovieMotion(self):
+        """ Accumulated motion of a movie's global trajectory (Å, the units
+        of Warp's movement grids): the length of the path through the
+        frames.
 
-        Returns a dict with 'total', 'early' and 'late'. Early is the motion
-        of the frames up to earlyDose e/Å² within the movie, as in RELION.
+        Warp stores only the trajectory, GridMovementX/Y: a spline whose
+        control points (Depth) are spread over the frames.  It reports no
+        accumulated motion, and early and late motion (RELION's split at
+        4 e/Å² within the movie) do not apply to tilt movies, which take
+        less dose than that.
         """
         params = self.getDict('Movie', 'OptionsMovement', 'Param')
         nFrames = int(float(params['Dimensions'].split(',')[2]))
         xs = self.getGrid('Movie', 'GridMovementX').mean(axis=(1, 2))
         ys = self.getGrid('Movie', 'GridMovementY').mean(axis=(1, 2))
         if len(xs) != nFrames:
-            # Grid nodes are spline control points spread over the movie
             t, tNodes = np.linspace(0, 1, nFrames), np.linspace(0, 1, len(xs))
             xs, ys = np.interp(t, tNodes, xs), np.interp(t, tNodes, ys)
-
-        steps = np.hypot(np.diff(xs), np.diff(ys))
-        # Negative is Warp's convention for the dose of the whole movie
-        dose = float(params['DosePerAngstromFrame'])
-        frameDose = -dose / nFrames if dose < 0 else dose
-        priorDose = frameDose * np.arange(1, nFrames)
-        total = float(steps.sum())
-        early = float(steps[priorDose <= earlyDose].sum())
-        return {'total': total, 'early': early, 'late': total - early}
+        return float(np.hypot(np.diff(xs), np.diff(ys)).sum())
 
 
 class WarpSpecies(dict):
