@@ -15,7 +15,6 @@
 # **************************************************************************
 
 from doctest import OutputChecker
-import os
 import io
 import numpy as np
 import base64
@@ -165,6 +164,31 @@ class Thumbnail:
         }
         defaults.update(kwargs)
         return Thumbnail(**defaults)
+
+    @staticmethod
+    def Tilt(**kwargs):
+        """ Shortcut method with presets for the thumbnails of tilt images,
+        that are low dose: use it on bin_array() of the tilt.
+        All settings can be overwritten with kwargs.
+        """
+        defaults = {
+            'output_format': None,
+            'max_size': (512, 512),
+            'contrast_factor': 0.5,
+            'std_threshold': 2,
+            'gaussian_radius': 1.0
+        }
+        defaults.update(kwargs)
+        return Thumbnail(**defaults)
+
+    @staticmethod
+    def bin_array(array, size):
+        """ Block-average a 2D array to about twice the given size, which
+        removes most of the shot noise of a low dose image. """
+        f = max(1, max(array.shape) // (2 * size))
+        h, w = (array.shape[0] // f) * f, (array.shape[1] // f) * f
+        binned = array[:h, :w].astype(np.float32)
+        return binned.reshape(h // f, f, w // f, f).mean(axis=(1, 3))
 
     @staticmethod
     def _preview_stack_indices(n):
@@ -467,38 +491,3 @@ class Image:
             )
 
         raise ValueError("Expected 2D or 3D image, got shape: %s" % (array.shape,))
-
-
-class TiltThumbnails:
-    """ The images of the tilts of a tilt series: the tilt jpegs and the
-    CTF fit views.  Only how they are made; the files, their folder and
-    how they are written are emwrap's (emwrap.base.tilt_thumbnails).
-
-        SIZE px          filmstrip, and what the image QC measures
-        MEDIUM_SIZE px   a closer look
-        PS_SIZE px       CTF fit view, measured over simulated
-    """
-    # The image QC measures (emwrap TiltQualityCuration) were calibrated on
-    # this size and on tilt_image(): changing either needs a recalibration
-    SIZE = 512
-    # Larger is not better: each jpeg's contrast is set from its own
-    # pixels, and beyond this size those of a low dose tilt are mostly
-    # shot noise
-    MEDIUM_SIZE = 1024
-    PS_SIZE = 384
-
-    @classmethod
-    def tilt_image(cls, data, size=SIZE):
-        """ The jpeg image (PIL) of a tilt average: block-averaged to about
-        twice the size, which removes most of the shot noise, then
-        contrast-stretched and lightly blurred. """
-        f = max(1, max(data.shape) // (2 * size))
-        h, w = (data.shape[0] // f) * f, (data.shape[1] // f) * f
-        binned = data[:h, :w].astype(np.float32).reshape(h // f, f, w // f, f).mean(axis=(1, 3))
-        return Thumbnail(output_format=None, max_size=(size, size), std_threshold=2,
-                         contrast_factor=0.5, gaussian_radius=1.0).from_array(binned)
-
-    @classmethod
-    def ps_image(cls, arr, size=PS_SIZE):
-        """ The CTF fit view image (PIL) of a uint8 array. """
-        return PIL.Image.fromarray(arr).resize((size, size), PIL.Image.BICUBIC)
