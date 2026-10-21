@@ -16,10 +16,7 @@
 
 from doctest import OutputChecker
 import os
-import re
 import io
-import json
-import threading
 import numpy as np
 import base64
 import mrcfile
@@ -473,58 +470,22 @@ class Image:
 
 
 class TiltThumbnails:
-    """ The jpegs, and CTF fit profiles, of the tilts of a tilt series.
+    """ The images of the tilts of a tilt series: the tilt jpegs and the
+    CTF fit views.  Only how they are made; the files, their folder and
+    how they are written are emwrap's (emwrap.base.tilt_thumbnails).
 
-    Whatever program processed the tilts, the job that wrote a tilt's
-    average and power spectrum writes them into <job>/tilt_series/thumbnails:
-
-        <average>.jpg           SIZE px: filmstrip, and what tilt_qc measures
-        <average>_medium.jpg    MEDIUM_SIZE px: a closer look
-        <ps>_ps.jpg             PS_SIZE px: CTF fit view, measured over simulated
-        <ps>_ctf.json           its radial profiles and their correlation
-
-    <average> and <ps> are the base names of the MRCs.  Readers (emhub OTF
-    dashboard, tilt_qc) find the folder from the path of the MRC: folder().
+        SIZE px          filmstrip, and what the image QC measures
+        MEDIUM_SIZE px   a closer look
+        PS_SIZE px       CTF fit view, measured over simulated
     """
-    FOLDER = os.path.join('tilt_series', 'thumbnails')
-    # The image QC measures (tilt_qc) were calibrated on this size and on
-    # tilt_image(): changing either needs a recalibration
+    # The image QC measures (emwrap TiltQualityCuration) were calibrated on
+    # this size and on tilt_image(): changing either needs a recalibration
     SIZE = 512
     # Larger is not better: each jpeg's contrast is set from its own
     # pixels, and beyond this size those of a low dose tilt are mostly
     # shot noise
     MEDIUM_SIZE = 1024
     PS_SIZE = 384
-    QUALITY = 80
-    _JOB_DIR = re.compile(r'^job\d+$')
-
-    @classmethod
-    def folder(cls, path):
-        """ The thumbnails folder of the job folder (jobNNN) a file is in,
-        relative or absolute as path is; None if it is not in one. """
-        dirs = os.path.normpath(path).split(os.sep)[:-1]
-        for i in range(len(dirs), 0, -1):
-            if cls._JOB_DIR.match(dirs[i - 1]):
-                return os.path.join(os.sep.join(dirs[:i]) or os.sep, cls.FOLDER)
-        return None
-
-    @classmethod
-    def _file(cls, srcPath, suffix, folder=None):
-        """ The thumbnail file of srcPath, in folder or its job's, or None. """
-        folder = folder or cls.folder(srcPath)
-        return os.path.join(folder, Path.removeBaseExt(srcPath) + suffix) if folder else None
-
-    @classmethod
-    def tilt_jpeg(cls, avgPath, folder=None, medium=False):
-        return cls._file(avgPath, '_medium.jpg' if medium else '.jpg', folder)
-
-    @classmethod
-    def ps_jpeg(cls, psPath, folder=None):
-        return cls._file(psPath, '_ps.jpg', folder)
-
-    @classmethod
-    def ctf_json(cls, psPath, folder=None):
-        return cls._file(psPath, '_ctf.json', folder)
 
     @classmethod
     def tilt_image(cls, data, size=SIZE):
@@ -537,76 +498,7 @@ class TiltThumbnails:
         return Thumbnail(output_format=None, max_size=(size, size), std_threshold=2,
                          contrast_factor=0.5, gaussian_radius=1.0).from_array(binned)
 
-    @staticmethod
-    def tmp_path(path):
-        """ A temporary file beside path, unique per process and thread, for
-        writing then renaming, so a reader never gets a partial file. """
-        return f'{path}.{os.getpid()}.{threading.get_ident()}.tmp'
-
     @classmethod
-    def save_jpeg(cls, pilImage, path):
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        tmp = cls.tmp_path(path)
-        pilImage.save(tmp, format='JPEG', quality=cls.QUALITY)
-        os.replace(tmp, path)
-
-    @classmethod
-    def save_json(cls, data, path):
-        """ The temporary file is created with open(), so the folder's
-        default ACL applies. """
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        tmp = cls.tmp_path(path)
-        with open(tmp, 'w') as f:
-            json.dump(data, f)
-        os.replace(tmp, path)
-
-    @staticmethod
-    def _current(path, srcPath):
-        return os.path.exists(path) and os.path.getmtime(path) >= os.path.getmtime(srcPath)
-
-    @classmethod
-    def _required(cls, path, srcPath):
-        if path is None:
-            raise ValueError(f"{srcPath} is not in a job folder: give the thumbnails folder")
-        return path
-
-    @classmethod
-    def write_tilt(cls, avgPath, folder=None, medium=True):
-        """ Write the jpegs of a tilt average (and the medium one) that are
-        older than it; the MRC is read once, only if one is.  Returns the
-        number written. """
-        data, written = None, 0
-        for isMedium, size in ((False, cls.SIZE), (True, cls.MEDIUM_SIZE))[:1 + medium]:
-            path = cls._required(cls.tilt_jpeg(avgPath, folder, isMedium), avgPath)
-            if not cls._current(path, avgPath):
-                if data is None:
-                    data = Image.get_array(avgPath)
-                cls.save_jpeg(cls.tilt_image(data, size), path)
-                written += 1
-        return written
-
-    @classmethod
-    def write_ps(cls, psPath, makeView, folder=None):
-        """ Write the CTF fit view of a power spectrum, unless it is newer
-        than it.  makeView() -> (uint8 array, profile dict): made by each
-        program wrapper, as the spectrum and the fit are stored differently
-        by each program; the profile has 'k' (1/Å), 'measured',
-        'simulated' and 'correlation'.  Returns True if written. """
-        jpeg = cls._required(cls.ps_jpeg(psPath, folder), psPath)
-        jsonPath = cls.ctf_json(psPath, folder)
-        if cls._current(jpeg, psPath) and cls._current(jsonPath, psPath):
-            return False
-        arr, profile = makeView()
-        cls.save_json(profile, jsonPath)
-        cls.save_jpeg(PIL.Image.fromarray(arr).resize((cls.PS_SIZE, cls.PS_SIZE),
-                                                      PIL.Image.BICUBIC), jpeg)
-        return True
-
-    @classmethod
-    def read_ctf_correlation(cls, psPath, folder=None):
-        """ The CTF profile correlation of a power spectrum, or None. """
-        try:
-            with open(cls.ctf_json(psPath, folder)) as f:
-                return json.load(f).get('correlation')
-        except (OSError, ValueError, AttributeError, TypeError):
-            return None
+    def ps_image(cls, arr, size=PS_SIZE):
+        """ The CTF fit view image (PIL) of a uint8 array. """
+        return PIL.Image.fromarray(arr).resize((size, size), PIL.Image.BICUBIC)
