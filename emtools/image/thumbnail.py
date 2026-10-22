@@ -166,6 +166,31 @@ class Thumbnail:
         return Thumbnail(**defaults)
 
     @staticmethod
+    def Tilt(**kwargs):
+        """ Shortcut method with presets for the thumbnails of tilt images,
+        that are low dose: use it on bin_array() of the tilt.
+        All settings can be overwritten with kwargs.
+        """
+        defaults = {
+            'output_format': None,
+            'max_size': (512, 512),
+            'contrast_factor': 0.5,
+            'std_threshold': 2,
+            'gaussian_radius': 1.0
+        }
+        defaults.update(kwargs)
+        return Thumbnail(**defaults)
+
+    @staticmethod
+    def bin_array(array, size):
+        """ Block-average a 2D array to about twice the given size, which
+        removes most of the shot noise of a low dose image. """
+        f = max(1, max(array.shape) // (2 * size))
+        h, w = (array.shape[0] // f) * f, (array.shape[1] // f) * f
+        binned = array[:h, :w].astype(np.float32)
+        return binned.reshape(h // f, f, w // f, f).mean(axis=(1, 3))
+
+    @staticmethod
     def _preview_stack_indices(n):
         """Return 4 frame indices: first, two equally spaced, last."""
         if n <= 1:

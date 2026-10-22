@@ -20,6 +20,7 @@ import pathlib
 from datetime import datetime, timedelta
 from glob import glob
 from readline import insert_text
+import numpy as np
 import xmltodict
 
 from emtools.utils import Path, Pretty, Color, Timer
@@ -394,6 +395,48 @@ class WarpXml:
         if manual != 'null':
             return manual != 'True'
         return attrs.get('UnselectFilter', 'False') != 'True'
+
+    def get(self, *keys, default=None):
+        """ Navigate the provided keys, '@Name' keys being attributes, and
+        return the value found or default if any key is missing. """
+        d = self._data
+        for k in keys:
+            if not isinstance(d, dict) or k not in d:
+                return default
+            d = d[k]
+        return d
+
+    def getGrid(self, *keys):
+        """ Values of a Warp CubicGrid element as an array (Depth, Height, Width). """
+        grid = self.get(*keys)
+        if not isinstance(grid, dict):
+            raise KeyError(f"No CubicGrid at {'/'.join(keys)}")
+        shape = [int(grid[f'@{k}']) for k in ('Depth', 'Height', 'Width')]
+        values = np.zeros(shape)
+        nodes = grid['Node']
+        for n in nodes if isinstance(nodes, list) else [nodes]:
+            values[int(n['@Z']), int(n['@Y']), int(n['@X'])] = float(n['@Value'])
+        return values
+
+    def getMovieMotion(self):
+        """ Accumulated motion of a movie's global trajectory (Å, the units
+        of Warp's movement grids): the length of the path through the
+        frames.
+
+        Warp stores only the trajectory, GridMovementX/Y: a spline whose
+        control points (Depth) are spread over the frames.  It reports no
+        accumulated motion, and early and late motion (RELION's split at
+        4 e/Å² within the movie) do not apply to tilt movies, which take
+        less dose than that.
+        """
+        params = self.getDict('Movie', 'OptionsMovement', 'Param')
+        nFrames = int(float(params['Dimensions'].split(',')[2]))
+        xs = self.getGrid('Movie', 'GridMovementX').mean(axis=(1, 2))
+        ys = self.getGrid('Movie', 'GridMovementY').mean(axis=(1, 2))
+        if len(xs) != nFrames:
+            t, tNodes = np.linspace(0, 1, nFrames), np.linspace(0, 1, len(xs))
+            xs, ys = np.interp(t, tNodes, xs), np.interp(t, tNodes, ys)
+        return float(np.hypot(np.diff(xs), np.diff(ys)).sum())
 
 
 class WarpSpecies(dict):
