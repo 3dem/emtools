@@ -25,7 +25,7 @@ from pprint import pprint
 import numpy as np
 
 from emtools.utils import Process, Color, Path, Timer, Pretty
-from emtools.metadata import EPU, MovieFiles
+from emtools.metadata import EPU, MovieFiles, TomoFiles
 
 
 def scan_folder(folder):
@@ -119,6 +119,77 @@ def scan_compare(folder, compare_path):
 
     if not new_files and not deleted_files and not modified and not new_dirs and not deleted_dirs:
         print(Color.green("\nNo changes detected."))
+
+
+def _values_str(values, fmt='{}', unit=''):
+    """ Return a string with the distinct values, or a range if many. """
+    values = [v for v in values if v is not None]
+    if not values:
+        return Color.red('N/A')
+    unique = sorted(set(values))
+    if len(unique) <= 3:
+        return ', '.join(fmt.format(v) for v in unique) + unit
+    return (f"{fmt.format(min(unique))} - {fmt.format(max(unique))}{unit} "
+            f"(mean {fmt.format(np.mean(values))})")
+
+
+def tomoSummary(folder):
+    """ Inspect a tomography data collection folder and print a summary. """
+    if not os.path.isdir(folder):
+        raise SystemExit(f"ERROR: Not a directory: {folder}")
+    tf = TomoFiles(folder)
+    folder, mdocs, movies, moviesTs = tf.folder, tf.mdocs, tf.movies, tf.moviesTs
+
+    def _rel(paths):
+        return ', '.join(os.path.relpath(p, folder) for p in paths)
+
+    print(f"Folder: {Color.bold(folder)}")
+    print(f"  Mdoc folders:   {_rel(tf.mdocDirs)}")
+    print(f"  Frames folders: {_rel(tf.framesDirs)}")
+
+    if mdocs:
+        header = (f"\n{'Mdoc':<30} {'Tilts':>6} {'Movies':>7} {'Range':>14} "
+                  f"{'Pixel(A)':>9} {'Dose(e/A2)':>11} {'TiltAxis':>9} {'ImageSize':>12}")
+        print(Color.bold(header))
+
+        def _fmt(v, fmt):
+            return 'N/A' if v is None else fmt.format(v)
+
+        for name, info in sorted(mdocs.items()):
+            found = tf.foundMovies(info)
+            angles = info['angles']
+            arange = f"{min(angles):.1f}/{max(angles):.1f}" if angles else 'N/A'
+            size = ' x '.join(info['imageSize']) if info['imageSize'] else 'N/A'
+            print(f"{name:<30} {info['tilts']:>6} {found:>7} {arange:>14} "
+                  f"{_fmt(info['pixelSize'], '{:.4f}'):>9} "
+                  f"{_fmt(info['dose'], '{:.2f}'):>11} "
+                  f"{_fmt(info['tiltAxis'], '{:.2f}'):>9} {size:>12}")
+
+    if moviesTs:
+        print(Color.bold(f"\n{'Movies tilt-series':<30} {'Tilts':>6}"))
+        for ts, tsMovies in sorted(moviesTs.items()):
+            print(f"{ts:<30} {len(tsMovies):>6}")
+
+    infos = list(mdocs.values())
+    dims = TomoFiles.movieDims(movies[0]) if movies else None
+
+    print(Color.bold("\nSummary"))
+    print(f"  Tilt-series (mdocs):      {Color.green(len(mdocs))}")
+    print(f"  Tilt-series (movies):     {Color.green(len(moviesTs))}")
+    print(f"  Total movies:             {len(movies)}")
+    if mdocs and moviesTs and len(mdocs) != len(moviesTs):
+        print(Color.red("  WARNING: Number of tilt-series from mdocs and movies differ"))
+    tilts = [i['tilts'] for i in infos] or [len(v) for v in moviesTs.values()]
+    print(f"  Tilts per tilt-series:    {_values_str(tilts)}")
+    print(f"  Pixel size:               {_values_str([i['pixelSize'] for i in infos], '{:.4f}', ' A/px')}")
+    print(f"  Dose per tilt:            {_values_str([i['dose'] for i in infos], '{:.2f}', ' e/A2')}")
+    print(f"  Tilt-axis angle:          {_values_str([i['tiltAxis'] for i in infos], '{:.2f}', ' deg')}")
+    sizes = [' x '.join(i['imageSize']) for i in infos if i['imageSize']]
+    print(f"  Image size (mdoc):        {_values_str(sizes)}")
+    if dims:
+        x, y, n = dims
+        print(f"  Image size (movie):       {x} x {y}, {n} frames "
+              f"({os.path.basename(movies[0])})")
 
 
 def statsDir(folder, sort):
@@ -253,6 +324,11 @@ def main():
     g = p.add_mutually_exclusive_group()
     g.add_argument('--stats', '-s', metavar='FOLDER',
                    help="Statistics of the files in a given folder.")
+    g.add_argument('--tomo', '-t', metavar='FOLDER',
+                   help="Summary of the tomography data in a data collection "
+                        "folder: number of tilt-series (from mdocs and movies), "
+                        "tilts per tilt-series, pixel size, dose per tilt, "
+                        "tilt-axis angle and image size.")
     g.add_argument('--timing', metavar='FOLDER_OR_PATTERN',
                    help="Compute histogram from the timestamps of files "
                         "in the folder or matching the pattern.")
@@ -307,6 +383,9 @@ def main():
 
     if folder := args.stats:
         statsDir(folder, args.sort)
+
+    elif folder := args.tomo:
+        tomoSummary(folder)
 
     elif dirs := args.copy_dir:
         src, dst = args.copy_dir

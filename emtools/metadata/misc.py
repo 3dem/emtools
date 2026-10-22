@@ -17,6 +17,7 @@
 import hashlib
 import os
 import pathlib
+import re
 from datetime import datetime, timedelta
 from glob import glob
 from readline import insert_text
@@ -342,6 +343,173 @@ class Mdoc(dict):
                     f.write(f"\n[{key}]\n")
                 for k, v in section.items():
                     f.write(f"{k} = {v}\n")
+
+
+class TomoFiles:
+    """ Detect the tomography files (mdocs and movies) in a data collection
+    folder and extract the tilt-series acquisition info.
+
+    The mdoc files can be in the root folder or in direct subfolders named
+    'mdoc' or 'mdocs'; movies in the root folder or in direct subfolders
+    containing 'frames' (case-insensitive).
+    """
+    MOVIE_EXTS = ('.tif', '.tiff', '.eer', '.mrc')
+    # Movie names like: <TS>_00001_-0.0_Jul31_16.50.54.tif or <TS>_001[-0.00]_EER.eer
+    MOVIE_REGEX = re.compile(r'^(?P<ts>.+?)_(?P<index>\d{3,5})[_\[](?P<angle>-?\d+(?:\.\d+)?)(?:[_\]].*)?$')
+    TILT_AXIS_REGEX = re.compile(r'tilt\s*axis\s*angle\s*=\s*(-?\d+(?:\.\d+)?)', re.IGNORECASE)
+
+    def __init__(self, folder):
+        self.folder = os.path.abspath(os.path.expanduser(folder))
+        if not os.path.isdir(self.folder):
+            raise Exception(f"Not a directory: {self.folder}")
+
+        self.mdocDirs = self._subdirs(lambda n: n in ('mdoc', 'mdocs'))
+        self.framesDirs = self._subdirs(lambda n: 'frames' in n)
+
+        # Tilt-series from mdocs (unique by file name)
+        self.mdocs = {}
+        for mdocFn in self._files(self.mdocDirs, ('.mdoc',)):
+            name = os.path.basename(mdocFn)
+            if name not in self.mdocs and (info := TomoFiles.parseMdoc(mdocFn)):
+                self.mdocs[name] = info
+
+        self.movies = [m for m in self._files(self.framesDirs, self.MOVIE_EXTS)
+                       if self._isMovie(m)]
+        self._movieStems = {self._stem(m) for m in self.movies}
+
+        # Tilt-series from movies (unique by file name prefix)
+        self.moviesTs = {}
+        for m in self.movies:
+            self.moviesTs.setdefault(TomoFiles.tiltSeriesName(m), []).append(m)
+
+    @staticmethod
+    def _stem(path):
+        return os.path.splitext(os.path.basename(path))[0]
+
+    def _subdirs(self, match):
+        """ Return the root folder plus its direct subfolders whose
+        lower-case name satisfies the match function. """
+        dirs = [self.folder]
+        for fn in sorted(os.listdir(self.folder)):
+            path = os.path.join(self.folder, fn)
+            if os.path.isdir(path) and match(fn.lower()):
+                dirs.append(path)
+        return dirs
+
+    @staticmethod
+    def _files(dirs, exts):
+        files = []
+        for d in dirs:
+            for fn in sorted(os.listdir(d)):
+                path = os.path.join(d, fn)
+                if fn.lower().endswith(exts) and os.path.isfile(path):
+                    files.append(path)
+        return files
+
+    def _isMovie(self, path):
+        """ Ignore gain/dark references and tilt-series stacks with mdoc
+        (e.g. TS_1.mrc with TS_1.mrc.mdoc). In the root folder, only
+        consider files that follow the tilt movie naming pattern. """
+        fn = os.path.basename(path)
+        if (f"{fn}.mdoc" in self.mdocs or
+                'gain' in fn.lower() or 'dark' in fn.lower()):
+            return False
+        return (os.path.dirname(path) != self.folder or
+                bool(self.MOVIE_REGEX.match(self._stem(fn))))
+
+    @staticmethod
+    def tiltSeriesName(moviePath):
+        """ Return the tilt-series name from the movie file name. """
+        stem = TomoFiles._stem(moviePath)
+        match = TomoFiles.MOVIE_REGEX.match(stem)
+        return match.group('ts') if match else stem
+
+    def foundMovies(self, mdocInfo):
+        """ Return the number of movies found for the given mdoc info. """
+        return sum(1 for s in mdocInfo['subframes'] if s in self._movieStems)
+
+    @staticmethod
+    def movieDims(moviePath):
+        """ Return (x, y, frames) from the movie header, or None. """
+        try:
+            if moviePath.lower().endswith('.mrc'):
+                import mrcfile
+                with mrcfile.open(moviePath, header_only=True, permissive=True) as mrc:
+                    h = mrc.header
+                    return int(h.nx), int(h.ny), int(h.nz)
+            import tifffile
+            with tifffile.TiffFile(moviePath) as tif:
+                y, x = tif.pages[0].shape[:2]
+                return x, y, len(tif.pages)
+        except Exception as e:
+            print(Color.red(f"Could not read dimensions from {moviePath}: {e}"))
+            return None
+
+    @staticmethod
+    def parseMdoc(mdocFn):
+        """ Parse an mdoc file and extract the tilt-series acquisition info. """
+        try:
+            mdoc = Mdoc.parse(mdocFn)
+        except Exception as e:
+            print(Color.red(f"Could not parse {mdocFn}: {e}"))
+            return None
+
+        g = mdoc['global']
+        zsections = [s for _, s in mdoc.zsections()]
+
+        def _float(value):
+            try:
+                return float(str(value).split()[0])
+            except (ValueError, IndexError):
+                return None
+
+        def _first(key):
+            for s in [g] + zsections:
+                if key in s:
+                    return s[key]
+            return None
+
+        # Tilt axis is usually in a title section: [T = Tilt axis angle = -93.5, ...]
+        tiltAxis = None
+        for k, s in mdoc.items():
+            for text in [k] + [f"{kk} = {vv}" for kk, vv in s.items()]:
+                if m := TomoFiles.TILT_AXIS_REGEX.search(text):
+                    tiltAxis = float(m.group(1))
+                    break
+            if tiltAxis is not None:
+                break
+        if tiltAxis is None:  # Some mdocs (e.g. Tomo5) store it as a key
+            tiltAxis = _float(_first('TiltAxisAngle'))
+
+        # Dose per tilt: ExposureDose, or from FrameDosesAndNumber,
+        # or from the increments of PriorRecordDose
+        doses = []
+        for s in zsections:
+            dose = _float(s.get('ExposureDose'))
+            if not dose and 'FrameDosesAndNumber' in s:
+                parts = s['FrameDosesAndNumber'].split()
+                dose = sum(float(d) * float(n) for d, n in zip(parts[::2], parts[1::2]))
+            doses.append(dose or 0)
+        if not any(doses):
+            prior = sorted(v for v in (_float(s.get('PriorRecordDose')) for s in zsections)
+                           if v is not None)
+            doses = [b - a for a, b in zip(prior, prior[1:]) if b > a]
+
+        angles = [a for a in (_float(s.get('TiltAngle')) for s in zsections) if a is not None]
+        imageSize = _first('ImageSize')
+        subframes = [os.path.splitext(Mdoc.getSubFrameBase(s))[0]
+                     for s in zsections if s.get('SubFramePath')]
+        return {
+            'path': mdocFn,
+            'name': os.path.basename(mdocFn),
+            'tilts': len(zsections),
+            'pixelSize': _float(_first('PixelSpacing')),
+            'dose': np.mean(doses) if any(doses) else None,
+            'tiltAxis': tiltAxis,
+            'imageSize': tuple(imageSize.split()) if imageSize else None,
+            'angles': angles,
+            'subframes': subframes,
+        }
 
 
 class TextFile:
