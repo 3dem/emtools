@@ -22,6 +22,12 @@ import psutil
 import subprocess
 import logging
 
+from .color import Color
+
+
+def _print(*msgs):
+    print(*msgs)
+
 
 class Process:
     def __init__(self, *args, **kwargs):
@@ -29,7 +35,8 @@ class Process:
         self.args = args
         error = ''
         try:
-            self._p = subprocess.run(args, capture_output=True, text=True)
+            self._p = subprocess.run(args, capture_output=True, text=True,
+                                     input=kwargs.get('input', None))
             self.stdout = self._p.stdout
             self.stderr = self._p.stderr
             self.returncode = self._p.returncode
@@ -46,7 +53,7 @@ class Process:
     def lines(self):
         """ Iterate over the lines of the process output.
         """
-        for line in self.stdout.split('\n'):
+        for line in self.stdout.splitlines():
             yield line
 
     def print(self, args=True, stdout=False):
@@ -56,7 +63,7 @@ class Process:
             print(self.stdout)
 
     @staticmethod
-    def system(cmd, only_print=False, color=None, do_print=True):
+    def system(cmd, only_print=False, color=None, print=_print):
         """ Execute and print a command.
 
         Args:
@@ -65,7 +72,7 @@ class Process:
                 not executed
             color: Optional color for the command
         """
-        if do_print:
+        if print:
             printCmd = cmd if color is None else color(cmd)
             print(printCmd)
         if not only_print:
@@ -91,10 +98,18 @@ class Process:
                 pids.add(proc.pid)
 
         attrs = ['pid', 'ppid', 'name', 'cwd', 'username', 'memory_percent', 'cpu_percent']
+        def _filter_name(proc):
+            if program and program not in proc.info['name']:
+                cmdline = proc.cmdline()
+                if len(cmdline) == 0 or all(program not in cmd for cmd in cmdline):
+                    return False
+            return True
+
         for proc in psutil.process_iter(attrs):
-            if not program or program in proc.info['name']:
+            if _filter_name(proc):
                 folder = proc.info['cwd']
                 if workingDir is None or folder == workingDir:
+                    print(f"program: {program}, proc_info: {proc.info['name']}")
                     _addProc(folder, proc)
                     if children:
                         for child in proc.children(recursive=True):
@@ -102,6 +117,73 @@ class Process:
                             _addProc(folder, child)
 
         return processes
+
+    @staticmethod
+    def checkChilds(programName, folderPath, kill=False, verbose=0, pid=None):
+        from .system import System
+        specs = System.specs()
+        cpus = specs['CPUs']
+        attrs = ['pid', 'ppid', 'name', 'cwd', 'username',
+                 'memory_percent', 'cpu_percent']
+
+        if pid is not None:
+            try:
+                root = psutil.Process(int(pid))
+            except (psutil.NoSuchProcess, psutil.AccessDenied, ValueError):
+                return False
+
+            procs = []
+            seen = set()
+
+            def _add(proc):
+                if proc.pid in seen:
+                    return
+                proc.info = proc.as_dict(attrs)
+                procs.append(proc)
+                seen.add(proc.pid)
+
+            _add(root)
+            for child in root.children(recursive=True):
+                _add(child)
+            folder = root.info.get('cwd') or folderPath or ''
+            processes = {folder: procs}
+        else:
+            processes = Process.ps(programName, workingDir=folderPath,
+                                   children=True)
+
+        color = Color.red if kill else Color.bold
+
+        for folder, procs in processes.items():
+            print(Color.warn(f"{folder}"))
+            header = f"     {'USER':<15} {'PPID/PID':<15} {color('PROGRAM'):<30}"
+            if verbose > 0:
+                header += f" {'CPU(%)':>10} {'MEMORY(%)':>10}"
+                if verbose > 1:
+                    header += f" {'COMMAND LINE'}"
+
+            print(Color.bold(header))
+
+            prefix = 'Killing' if kill else ''
+            for p in procs:
+                pidstr = f"{p.info['ppid']}/{p.pid}"
+                msg = f"   {prefix}  {p.info['username']:<15} {pidstr:<15} {color(p.info['name']):<30}"
+                if verbose > 0:
+                    try:
+                        cpu_percent = p.cpu_percent(interval=1) / cpus
+                    except:
+                        continue
+
+                    msg += f" {cpu_percent:>10,.2f} {p.info['memory_percent']:>10,.2f}"
+                    if verbose > 1:
+                        msg += f" {p.cmdline()}"
+                print(msg)
+                if kill:
+                    try:
+                        p.kill()
+                    except:
+                        pass
+
+        return True if pid is not None else None
 
     class Logger:
         """ Use a logger to log commands that are executed via os.system. """
@@ -119,6 +201,7 @@ class Process:
             # Shortcuts
             self.logger = logger
             self.info = logger.info
+            self.debug = logger.debug
             self.error = logger.error
             self.warning = logger.warning
 

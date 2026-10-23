@@ -21,8 +21,13 @@ index, name, driver_version, temperature.gpu, utilization.gpu [%], utilization.m
 """
 
 import socket
+import shutil
 import platform
 import psutil
+import time
+import json
+import threading
+from datetime import datetime
 
 from .process import Process
 
@@ -97,3 +102,107 @@ class System:
     def hostname():
         """ Return the hostname. """
         return socket.gethostname()
+
+    @staticmethod
+    def distro():
+        """ Return a human-readable OS distribution name and version.
+        On Linux, it reads /etc/os-release (PRETTY_NAME); on macOS it uses
+        the product version; falls back to platform.platform() otherwise.
+        """
+        system = platform.system()
+
+        if system == 'Linux':
+            info = {}
+            try:
+                with open('/etc/os-release') as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line or line.startswith('#') or '=' not in line:
+                            continue
+                        key, _, value = line.partition('=')
+                        info[key] = value.strip().strip('"')
+            except (FileNotFoundError, OSError):
+                pass
+
+            name = info.get('PRETTY_NAME') or info.get('NAME')
+            return name or f"Linux {platform.release()}"
+
+        elif system == 'Darwin':
+            version, _, _ = platform.mac_ver()
+            return f"macOS {version}" if version else "macOS"
+
+        return platform.platform()
+
+    @staticmethod
+    def kernel():
+        """ Return the kernel release (e.g. what 'uname -r' would print). """
+        return platform.release()
+
+    @staticmethod
+    def disk(path='/'):
+        """ Return disk usage (in bytes) for the filesystem containing path.
+        Keys: 'total', 'used', 'free'. Returns None if it can't be read. """
+        try:
+            usage = shutil.disk_usage(path)
+        except OSError:
+            return None
+        return {'total': usage.total, 'used': usage.used, 'free': usage.free}
+
+
+class GpuMonitor(threading.Thread):
+    """ Monitor GPU utilization.
+    Keeps an internal record of utilization data points, indexed by time. """
+
+    def __init__(self):
+        super().__init__()
+        self._stopEvent = threading.Event()
+        self._data = {
+            "sample": System.gpus(),
+            "columns": ["timestamp", ["temperature.gpu",
+                                      "utilization.gpu",
+                                      "utilization.memory"]],
+            "rows": []
+        }
+        self.sleep = 1
+        self.outputLog = 'gpu_monitor.json'
+
+    def sample(self, verbose=False):
+        now = datetime.now()
+        gpus = System.gpus()
+        gpuLine = f'\r{now}   '
+        row = [str(now), []]
+        gpuEntries = {}
+        for gpuDict in sorted(gpus, key=lambda r: r['index']):
+            i = gpuDict['index']
+            ugpu = gpuDict["utilization.gpu"].split()[0]  # Remove % character
+            umem = gpuDict["utilization.memory"].split()[0]
+            gpuStr = f'{i}: gpu {ugpu}, mem {umem}'
+            gpuLine += f"{gpuStr:<30}"
+            gpuEntries[i] = [ugpu, umem]
+        if verbose:
+            print(gpuLine, end="")
+        self._data['rows'].append([str(now), gpuEntries])
+
+    def monitor(self, outputLog=None):
+        if outputLog:
+            self.outputLog = outputLog
+        c = 0
+        while not self._stopEvent.is_set():
+            self.sample()
+            c += 1
+            if self.outputLog and c % 10 == 1:
+                with open(self.outputLog, 'w') as f:
+                    json.dump(self._data, f)
+                    c = 0
+
+            time.sleep(self.sleep)
+
+    def run(self):
+        self.monitor()
+
+    def stop(self):
+        """ Stop the current thread. """
+        self._stopEvent.set()
+        self.join()
+
+
