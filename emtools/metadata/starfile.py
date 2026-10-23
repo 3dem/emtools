@@ -47,7 +47,7 @@ class StarFile(AbstractContextManager):
     """
 
     # Compile regex to split data lines taking into account string literals
-    _splitRegex = re.compile('\"[^"]*\"|[^"\s]+')
+    _splitRegex = re.compile(r'"[^"]*"|[^"\s]+')
 
     @staticmethod
     def printTable(table, tableName='',
@@ -87,7 +87,7 @@ class StarFile(AbstractContextManager):
         return item in self.getTableNames()
 
     def getTableNames(self):
-        """ Return all the names of the *data\_* blocks found in the file. """
+        r""" Return all the names of the *data\_* blocks found in the file. """
         if not self._names:  # Scan for ALL table names
             f = self._file  # shortcut notation
             f.seek(0)  # move file pointer to the beginning
@@ -431,7 +431,7 @@ class StarFile(AbstractContextManager):
                    computeFormat=False,
                    timeStamp=False,
                    version=None):
-        """ Write a Table in Star format to the given file.
+        r""" Write a Table in Star format to the given file.
 
         Args:
             tableName: The name of the table to write.
@@ -599,7 +599,7 @@ class RelionStar:
     # RELION 5 pipeline STAR tables; prevents re-running pre-5.0 label migration.
     PIPELINE_VERSION = 50001
 
-    JOB_INDEX = re.compile('job(\d{3})')
+    JOB_INDEX = re.compile(r'job(\d{3})')
     TRUE_VALUES = ['Yes', 'True', 'true']
     FALSE_VALUES = ['No', 'False', 'false']
 

@@ -119,7 +119,7 @@ class TaskQueue:
         with self._lock:
             self._activeGenerators -= 1
             if self._activeGenerators == 0:
-                self._condEmpty.notifyAll()
+                self._condEmpty.notify_all()
 
     def isDone(self):
         with self._lock:
