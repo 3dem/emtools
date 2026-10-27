@@ -106,15 +106,28 @@ class Process:
             return True
 
         for proc in psutil.process_iter(attrs):
-            if _filter_name(proc):
-                folder = proc.info['cwd']
-                if workingDir is None or folder == workingDir:
-                    print(f"program: {program}, proc_info: {proc.info['name']}")
-                    _addProc(folder, proc)
-                    if children:
-                        for child in proc.children(recursive=True):
+            # Processes can finish while iterating, be zombies (e.g. not yet
+            # waited by the parent) or belong to other users, skip them
+            try:
+                if not _filter_name(proc):
+                    continue
+            except psutil.Error:
+                continue
+            folder = proc.info['cwd']
+            if workingDir is None or folder == workingDir:
+                print(f"program: {program}, proc_info: {proc.info['name']}")
+                _addProc(folder, proc)
+                if children:
+                    try:
+                        childs = proc.children(recursive=True)
+                    except psutil.Error:
+                        childs = []
+                    for child in childs:
+                        try:
                             child.info = child.as_dict(attrs)
-                            _addProc(folder, child)
+                        except psutil.Error:
+                            continue
+                        _addProc(folder, child)
 
         return processes
 
@@ -170,12 +183,15 @@ class Process:
                 if verbose > 0:
                     try:
                         cpu_percent = p.cpu_percent(interval=1) / cpus
-                    except:
-                        continue
+                    except psutil.Error:  # still killed below
+                        cpu_percent = 0
 
-                    msg += f" {cpu_percent:>10,.2f} {p.info['memory_percent']:>10,.2f}"
+                    msg += f" {cpu_percent:>10,.2f} {p.info['memory_percent'] or 0:>10,.2f}"
                     if verbose > 1:
-                        msg += f" {p.cmdline()}"
+                        try:
+                            msg += f" {p.cmdline()}"
+                        except psutil.Error:
+                            msg += " (no command line, zombie or finished)"
                 print(msg)
                 if kill:
                     try:
