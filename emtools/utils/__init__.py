@@ -19,12 +19,12 @@ from .pretty import Pretty
 from .time import Timer
 
 from .process import Process
-from .path import Path
-from .system import System
+from .path import Path, FolderManager
+from .system import System, GpuMonitor
 
 from .server import JsonTCPServer, JsonTCPClient
 
 
-__all__ = ["Color", "Pretty", "Timer", "Process", "Path", "System",
-           "JsonTCPServer", "JsonTCPClient"]
+__all__ = ["Color", "Pretty", "Timer", "Process", "Path", "FolderManager",
+           "System", "JsonTCPServer", "JsonTCPClient", "GpuMonitor"]
 

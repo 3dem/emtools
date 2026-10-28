@@ -24,7 +24,8 @@ from pprint import pprint
 from datetime import datetime
 
 from emtools.utils import Timer, Color, Pretty
-from emtools.metadata import StarFile, SqliteFile, EPU, StarMonitor
+from emtools.metadata import (StarFile, SqliteFile, EPU, StarMonitor, RelionStar,
+                              Table, WarpXml)
 from emtools.jobs import BatchManager
 from emtools.tests import testpath
 
@@ -373,6 +374,259 @@ class TestStarFile(unittest.TestCase):
         #self.__test_star_streaming(_pipeline, inputStreaming=True)
         self.__test_star_streaming(_pipeline, inputStreaming=False)
 
+    def test_table_offsets_cache(self):
+        ftmp = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.star')
+        ftmp.write("""
+# version 50001
+
+data_general
+
+_rlnTomoSubTomosAre2DStacks                       1
+
+# version 50001
+
+data_optics
+
+loop_ 
+_rlnOpticsGroup #1 
+_rlnOpticsGroupName #2 
+           1 opticsGroup1 
+           2 opticsGroup2 
+
+# version 50001
+
+data_particles
+
+loop_ 
+_rlnTomoName #1 
+_rlnTomoParticleId #2 
+TS_01            1 
+TS_01            2 
+TS_02            3 
+""")
+        ftmp.close()
+
+        with StarFile(ftmp.name) as sf:
+            self.assertEqual(sf.getTableNames(), ['general', 'optics', 'particles'])
+            self.assertEqual(set(sf._offsets),
+                             {'data_general', 'data_optics', 'data_particles'})
+
+            # Read out of order to exercise seeking from cached offsets
+            self.assertEqual(len(sf.getTable('particles')), 3)
+            self.assertEqual(sf.getTable('general')[0].rlnTomoSubTomosAre2DStacks, 1)
+            self.assertEqual(sf.getTableSize('optics'), 2)
+            self.assertEqual(sf.getTableInfo('particles').getColumnNames(),
+                             ['rlnTomoName', 'rlnTomoParticleId'])
+            self.assertIsNone(sf.getTable('missing'))
+
+        os.unlink(ftmp.name)
+
+    def test_scan_chunks(self):
+        """ Table names and sizes are found scanning the file in chunks,
+        the same as reading it line by line (input without a binary
+        buffer), with tables split between chunks. """
+        cases = {
+            'no_last_newline': ('data_a\n\nloop_\n_x #1\n_y #2\n1 2\n3 4\n\n'
+                                'data_b\n\n_z 5\n\ndata_c\nloop_\n_x\n1\n2\n3',
+                                {'a': 2, 'b': 1, 'c': 3}),
+            'spaces_line': ('data_a\nloop_\n_x\n1\n2\n   \t\n3\n', {'a': 2}),
+            'crlf': ('data_a\r\nloop_\r\n_x\r\n1\r\n2\r\n\r\n'
+                     'data_b\r\nloop_\r\n_y\r\n7\r\n', {'a': 2, 'b': 1}),
+            'empty_table': ('data_a\nloop_\n_x\n\ndata_b\nloop_\n_y\n1\n2\n  ',
+                            {'a': 0, 'b': 2}),
+            'quotes': ('data_a\nloop_\n_x\n"a b" 1\n2\n', {'a': 2}),
+        }
+        chunkSize = StarFile.SCAN_CHUNK_SIZE
+        try:
+            for name, (content, sizes) in cases.items():
+                with tempfile.TemporaryDirectory() as tmp:
+                    fn = os.path.join(tmp, f'{name}.star')
+                    with open(fn, 'w', newline='') as f:
+                        f.write(content)
+                    with open(fn) as f:  # Line by line
+                        with StarFile(f, closeFile=False) as sf:
+                            sf._binaryFile = lambda: None
+                            expected = (sf.getTableNames(), dict(sf._offsets),
+                                        {t: sf.getTableSize(t) for t in sizes})
+                    self.assertEqual(expected[2], sizes, name)
+                    for size in (1, 5, 64, 1024):
+                        StarFile.SCAN_CHUNK_SIZE = size
+                        with StarFile(fn) as sf:
+                            result = (sf.getTableNames(), dict(sf._offsets),
+                                      {t: sf.getTableSize(t) for t in sizes})
+                            # Tables can be read after counting
+                            for t, n in sizes.items():
+                                self.assertEqual(len(sf.getTable(t) or []), n)
+                        self.assertEqual(result, expected, f'{name}, chunk {size}')
+                        with StarFile(fn) as sf:  # Without the names
+                            self.assertEqual(
+                                {t: sf.getTableSize(t) for t in sizes}, sizes)
+        finally:
+            StarFile.SCAN_CHUNK_SIZE = chunkSize
+
+
+class TestTable(unittest.TestCase):
+    """Tests for Table.update and Table.filter."""
+
+    @staticmethod
+    def _sampleTable():
+        t = Table(['rlnA', 'rlnB', 'rlnStatus'])
+        t.addRowValues(1, 10, 'Scheduled')
+        t.addRowValues(2, 20, 'Scheduled')
+        t.addRowValues(3, 30, 'Finished')
+        return t
+
+    def test_update_constant(self):
+        t = self._sampleTable()
+        t.update('rlnB=100')
+        self.assertEqual(t.size(), 3)
+        for row in t:
+            self.assertEqual(row.rlnB, 100)
+
+    def test_update_from_column_expression(self):
+        t = self._sampleTable()
+        t.update('rlnB = rlnA * 10')
+        self.assertEqual(t[0].rlnB, 10)
+        self.assertEqual(t[1].rlnB, 20)
+        self.assertEqual(t[2].rlnB, 30)
+
+    def test_update_multiple_columns(self):
+        t = self._sampleTable()
+        t.update('rlnB = rlnA * 10, rlnStatus = "Updated"')
+        self.assertEqual(t[0].rlnB, 10)
+        self.assertEqual(t[0].rlnStatus, 'Updated')
+        self.assertEqual(t[2].rlnB, 30)
+
+    def test_update_later_assignments_see_earlier_updates(self):
+        t = Table(['rlnA', 'rlnB', 'rlnC'])
+        t.addRowValues(2, 0, 0)
+        t.update('rlnB = rlnA * 10, rlnC = rlnB + 1')
+        self.assertEqual(t[0].rlnB, 20)
+        self.assertEqual(t[0].rlnC, 21)
+
+    def test_update_whitespace_in_spec(self):
+        t = self._sampleTable()
+        t.update('  rlnB = rlnA * 10 ,  rlnStatus = "Updated"  ')
+        self.assertEqual(t[1].rlnB, 20)
+        self.assertEqual(t[1].rlnStatus, 'Updated')
+
+    def test_update_returns_self(self):
+        t = self._sampleTable()
+        self.assertIs(t.update('rlnB=0'), t)
+
+    def test_update_raises_on_invalid_spec(self):
+        t = self._sampleTable()
+        for spec in ['', 'rlnB', 'rlnB=1=2', 'rlnB==1']:
+            with self.subTest(spec=spec):
+                with self.assertRaises(ValueError):
+                    t.update(spec)
+
+    def test_update_raises_on_unknown_column(self):
+        t = self._sampleTable()
+        with self.assertRaisesRegex(ValueError, "not found"):
+            t.update('missingCol=1')
+
+    def test_filter_by_numeric_condition(self):
+        t = self._sampleTable()
+        t.filter('rlnA > 1')
+        self.assertEqual(t.size(), 2)
+        self.assertEqual([row.rlnA for row in t], [2, 3])
+
+    def test_filter_by_string_condition(self):
+        t = self._sampleTable()
+        t.filter('rlnStatus == "Scheduled"')
+        self.assertEqual(t.size(), 2)
+        self.assertTrue(all(row.rlnStatus == 'Scheduled' for row in t))
+
+    def test_filter_returns_self(self):
+        t = self._sampleTable()
+        self.assertIs(t.filter('rlnA > 0'), t)
+
+    def test_filter_raises_on_empty_spec(self):
+        t = self._sampleTable()
+        with self.assertRaisesRegex(ValueError, "non-empty"):
+            t.filter('   ')
+
+    def test_filter_raises_on_bare_column_name(self):
+        t = self._sampleTable()
+        with self.assertRaisesRegex(ValueError, "column name only"):
+            t.filter('rlnA')
+
+    def test_update_then_filter_chaining(self):
+        t = self._sampleTable()
+        t.update('rlnB = rlnA * 10').filter('rlnB >= 20')
+        self.assertEqual(t.size(), 2)
+        self.assertEqual([row.rlnA for row in t], [2, 3])
+        self.assertEqual([row.rlnB for row in t], [20, 30])
+
+
+class TestRelionStarTomo(unittest.TestCase):
+    """Tests for Relion tomography STAR file validation helpers."""
+
+    def _write_star(self, tables):
+        ftmp = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.star')
+        with StarFile(ftmp.name, 'w') as sf:
+            for table_name, table in tables.items():
+                sf.writeTable(table_name, table, timeStamp=False, singleRow=len(table) <= 1)
+        ftmp.close()
+        return ftmp.name
+
+    def test_isTomoOptimisationSet(self):
+        opt_star = self._write_star({
+            'optimisation_set': Table.fromDict({
+                'rlnTomoParticlesFile': 'particles.star',
+                'rlnTomoTomogramsFile': 'tomograms.star',
+            }),
+        })
+        wrong_table = self._write_star({
+            'global': Table.fromDict({'rlnTomoName': 'tomo1'}),
+        })
+        missing_link = self._write_star({
+            'optimisation_set': Table.fromDict({'rlnTomoTomogramsFile': 'tomograms.star'}),
+        })
+
+        self.assertTrue(RelionStar.isTomoOptimisationSet(opt_star))
+        self.assertFalse(RelionStar.isTomoOptimisationSet(wrong_table))
+        self.assertFalse(RelionStar.isTomoOptimisationSet(missing_link))
+        self.assertFalse(RelionStar.isTomoOptimisationSet(__file__))
+
+        row = RelionStar.readTomoOptimisationSet(opt_star)[0]
+        self.assertEqual(row.rlnTomoParticlesFile, 'particles.star')
+
+        for fn in (opt_star, wrong_table, missing_link):
+            os.unlink(fn)
+
+    def test_isTomoParticles(self):
+        particles_star = self._write_star({
+            'particles': Table.fromDict({
+                'rlnTomoName': 'tomo1',
+                'rlnCoordinateX': 1.0,
+                'rlnCoordinateY': 2.0,
+                'rlnCoordinateZ': 3.0,
+            }),
+        })
+        centered_star = self._write_star({
+            'particles': Table.fromDict({
+                'rlnTomoName': 'tomo1',
+                'rlnCenteredCoordinateXAngst': 10.0,
+                'rlnCenteredCoordinateYAngst': 20.0,
+                'rlnCenteredCoordinateZAngst': 30.0,
+            }),
+        })
+        missing_coords = self._write_star({
+            'particles': Table.fromDict({'rlnTomoName': 'tomo1'}),
+        })
+
+        self.assertTrue(RelionStar.isTomoParticles(particles_star))
+        self.assertTrue(RelionStar.isTomoParticles(centered_star))
+        self.assertFalse(RelionStar.isTomoParticles(missing_coords))
+
+        table = RelionStar.readTomoParticles(particles_star)
+        self.assertEqual(table[0].rlnTomoName, 'tomo1')
+
+        for fn in (particles_star, centered_star, missing_coords):
+            os.unlink(fn)
+
 
 class TestEPU(unittest.TestCase):
     """ Tests for EPU class. """
@@ -398,6 +652,61 @@ class TestEPU(unittest.TestCase):
             session = EPU.get_session_info(sessionPath)
             pprint(session)
 
+
+class TestWarpXml(unittest.TestCase):
+    """ Tests for WarpXml, on minimal movie xml files. """
+
+    @staticmethod
+    def _grid(tag, values, width=1, height=1):
+        depth = len(values) // (width * height)
+        nodes = ''.join(
+            f'<Node X="{i % width}" Y="{(i // width) % height}" '
+            f'Z="{i // (width * height)}" Value="{v}" />'
+            for i, v in enumerate(values))
+        return (f'<{tag} Width="{width}" Height="{height}" Depth="{depth}">'
+                f'{nodes}</{tag}>')
+
+    def _write(self, nFrames, dose, xs, ys, attrs='CTFResolutionEstimate="4.8"', **kw):
+        content = (
+            f'<Movie {attrs}><OptionsMovement>'
+            f'<Param Name="DosePerAngstromFrame" Value="{dose}" />'
+            f'<Param Name="Dimensions" Value="4096,4096,{nFrames}" />'
+            f'</OptionsMovement>'
+            f'{self._grid("GridMovementX", xs, **kw)}'
+            f'{self._grid("GridMovementY", ys, **kw)}</Movie>')
+        fd, fn = tempfile.mkstemp(suffix='.xml')
+        with os.fdopen(fd, 'w') as f:
+            f.write(content)
+        self.addCleanup(os.unlink, fn)
+        return WarpXml(fn)
+
+    def test_get(self):
+        xml = self._write(3, 1.0, [0, 0, 0], [0, 0, 0])
+        self.assertEqual(xml.get('Movie', '@CTFResolutionEstimate'), '4.8')
+        self.assertIsNone(xml.get('Movie', '@Missing'))
+        self.assertEqual(xml.get('Movie', 'Nope', 'Deeper', default=0), 0)
+
+    def test_getGrid(self):
+        # 2x1 spatial grid, 2 frames: layout is (Depth, Height, Width)
+        xml = self._write(2, 1.0, [1, 2, 3, 4], [0, 0, 0, 0], width=2)
+        grid = xml.getGrid('Movie', 'GridMovementX')
+        self.assertEqual(grid.shape, (2, 1, 2))
+        self.assertEqual(grid[1, 0, 0], 3)
+        self.assertEqual(grid[0, 0, 1], 2)
+
+    def test_movieMotion(self):
+        # Steps of 5, 0 and 5 Å: the length of the path
+        xml = self._write(4, 2.0, [0, 3, 3, 0], [0, 4, 4, 0])
+        self.assertAlmostEqual(xml.getMovieMotion(), 10.0)
+
+    def test_movieMotion_resampled(self):
+        # 2 control points over 5 frames: straight line, same path length
+        xml = self._write(5, 1.0, [0, 8], [0, 0])
+        self.assertAlmostEqual(xml.getMovieMotion(), 8.0)
+
+    def test_movieMotion_single_node(self):
+        xml = self._write(1, 1.0, [0.5], [0.5])
+        self.assertEqual(xml.getMovieMotion(), 0.0)
 
 
 class TestSqliteFile(unittest.TestCase):

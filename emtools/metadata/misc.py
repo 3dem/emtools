@@ -14,11 +14,17 @@
 # *
 # **************************************************************************
 
+import hashlib
 import os
-
+import pathlib
+import re
 from datetime import datetime, timedelta
+from glob import glob
+from readline import insert_text
+import numpy as np
+import xmltodict
 
-from emtools.utils import Path, Pretty, Process
+from emtools.utils import Path, Pretty, Color, Timer
 
 
 class Bins:
@@ -134,7 +140,8 @@ class DataFiles:
                       f"\n\ttime: {last_dt}")
 
             if self.first and self.last_ts:
-                print(f"Duration: {(last_dt - first_dt).seconds / 3600:0.2f} hours")
+                #print(f"Duration: {(last_dt - first_dt).seconds / 3600:0.2f} hours")
+                print(f"Duration: {Pretty.delta(last_dt - first_dt)}")
 
             print(f"Total {name}s: {self.total}, size: {Pretty.size(self.total_size)}")
 
@@ -160,12 +167,17 @@ class DataFiles:
 
     def scan(self, folder):
         """ Scan a folder and register all files recursively. """
+        t = Timer()
+
         self.root = Path.addslash(folder)
+        self._total_dirs = 0
 
         for root, dirs, files in os.walk(folder):
             for fn in files:
                 self.register(os.path.join(root, fn))
             self._total_dirs += len(dirs)
+
+        #t.toc("Scanned")
 
     def register(self, filename, stat=None):
         """ Register a file, if stat is None it will be calculated. """
@@ -207,7 +219,7 @@ class MovieFiles(DataFiles):
     def __init__(self, **kwargs):
         DataFiles.__init__(self, filters=[self.is_movie], **kwargs)
         self._moviesSuffix = kwargs.get('moviesSuffix',
-                                        ['fractions.tiff', '.eer'])
+                                        ['fractions.tiff', '.eer', 'fractions.mrc'])
 
     def is_movie(self, fn):
         return any(fn.endswith(s) for s in self._moviesSuffix)
@@ -274,9 +286,55 @@ class Mdoc(dict):
 
         return mdoc
 
+    @staticmethod
+    def glob(mdocPattern):
+        mdocs = []
+        for mdocFn in glob(mdocPattern):
+            mdoc = Mdoc.parse(mdocFn)
+            mdoc['MdocFile'] = {'Path': mdocFn}
+            mdocs.append(mdoc)
+
+        return mdocs
+
+    @staticmethod
+    def getSubFrameBase(section):
+        """ Helper method to extract the subframe base filename. """
+        subFramePath = section.get('SubFramePath', '')
+        return pathlib.PureWindowsPath(subFramePath).parts[-1]
+
+    MDOC_DATE_FMTS = ('%d-%b-%Y  %H:%M:%S', '%d-%b-%y  %H:%M:%S')
+
+    @staticmethod
+    def parseDate(dateStr):
+        """ Parse an mdoc DateTime field (e.g. '31-Jul-19  17:20:05').
+
+        SerialEM used dd-Mon-yy before 4.1; yyyy since 4.1 (July 2022).
+        """
+        for fmt in Mdoc.MDOC_DATE_FMTS:
+            try:
+                return datetime.strptime(dateStr, fmt)
+            except ValueError:
+                continue
+        raise ValueError(f"Could not parse mdoc DateTime: {dateStr!r}")
+
     @property
     def zvalues(self):
-        return [(k, v) for k, v in self.items() if k.startswith('ZValue')]
+        """ Get the Z values from the mdoc file.
+        Returns:
+            list[tuple[str, dict]]: list of Z values with the section data
+        """
+        return list(self.zsections())
+
+    def zsections(self, sort=None):
+        """ Iterate over ZValue sections in the mdoc file.
+        Args:
+            sort: Use 'date' to sort by acquisition date (newest first).
+        """
+        sections = [(k, v) for k, v in self.items() if k.startswith('ZValue')]
+        if sort == 'date':
+            sections.sort(key=lambda x: Mdoc.parseDate(x[1]['DateTime']))
+        for k, v in sections:
+            yield k, v
 
     def write(self, path):
         with open(path, 'w') as f:
@@ -285,6 +343,173 @@ class Mdoc(dict):
                     f.write(f"\n[{key}]\n")
                 for k, v in section.items():
                     f.write(f"{k} = {v}\n")
+
+
+class TomoFiles:
+    """ Detect the tomography files (mdocs and movies) in a data collection
+    folder and extract the tilt-series acquisition info.
+
+    The mdoc files can be in the root folder or in direct subfolders named
+    'mdoc' or 'mdocs'; movies in the root folder or in direct subfolders
+    containing 'frames' (case-insensitive).
+    """
+    MOVIE_EXTS = ('.tif', '.tiff', '.eer', '.mrc')
+    # Movie names like: <TS>_00001_-0.0_Jul31_16.50.54.tif or <TS>_001[-0.00]_EER.eer
+    MOVIE_REGEX = re.compile(r'^(?P<ts>.+?)_(?P<index>\d{3,5})[_\[](?P<angle>-?\d+(?:\.\d+)?)(?:[_\]].*)?$')
+    TILT_AXIS_REGEX = re.compile(r'tilt\s*axis\s*angle\s*=\s*(-?\d+(?:\.\d+)?)', re.IGNORECASE)
+
+    def __init__(self, folder):
+        self.folder = os.path.abspath(os.path.expanduser(folder))
+        if not os.path.isdir(self.folder):
+            raise Exception(f"Not a directory: {self.folder}")
+
+        self.mdocDirs = self._subdirs(lambda n: n in ('mdoc', 'mdocs'))
+        self.framesDirs = self._subdirs(lambda n: 'frames' in n)
+
+        # Tilt-series from mdocs (unique by file name)
+        self.mdocs = {}
+        for mdocFn in self._files(self.mdocDirs, ('.mdoc',)):
+            name = os.path.basename(mdocFn)
+            if name not in self.mdocs and (info := TomoFiles.parseMdoc(mdocFn)):
+                self.mdocs[name] = info
+
+        self.movies = [m for m in self._files(self.framesDirs, self.MOVIE_EXTS)
+                       if self._isMovie(m)]
+        self._movieStems = {self._stem(m) for m in self.movies}
+
+        # Tilt-series from movies (unique by file name prefix)
+        self.moviesTs = {}
+        for m in self.movies:
+            self.moviesTs.setdefault(TomoFiles.tiltSeriesName(m), []).append(m)
+
+    @staticmethod
+    def _stem(path):
+        return os.path.splitext(os.path.basename(path))[0]
+
+    def _subdirs(self, match):
+        """ Return the root folder plus its direct subfolders whose
+        lower-case name satisfies the match function. """
+        dirs = [self.folder]
+        for fn in sorted(os.listdir(self.folder)):
+            path = os.path.join(self.folder, fn)
+            if os.path.isdir(path) and match(fn.lower()):
+                dirs.append(path)
+        return dirs
+
+    @staticmethod
+    def _files(dirs, exts):
+        files = []
+        for d in dirs:
+            for fn in sorted(os.listdir(d)):
+                path = os.path.join(d, fn)
+                if fn.lower().endswith(exts) and os.path.isfile(path):
+                    files.append(path)
+        return files
+
+    def _isMovie(self, path):
+        """ Ignore gain/dark references and tilt-series stacks with mdoc
+        (e.g. TS_1.mrc with TS_1.mrc.mdoc). In the root folder, only
+        consider files that follow the tilt movie naming pattern. """
+        fn = os.path.basename(path)
+        if (f"{fn}.mdoc" in self.mdocs or
+                'gain' in fn.lower() or 'dark' in fn.lower()):
+            return False
+        return (os.path.dirname(path) != self.folder or
+                bool(self.MOVIE_REGEX.match(self._stem(fn))))
+
+    @staticmethod
+    def tiltSeriesName(moviePath):
+        """ Return the tilt-series name from the movie file name. """
+        stem = TomoFiles._stem(moviePath)
+        match = TomoFiles.MOVIE_REGEX.match(stem)
+        return match.group('ts') if match else stem
+
+    def foundMovies(self, mdocInfo):
+        """ Return the number of movies found for the given mdoc info. """
+        return sum(1 for s in mdocInfo['subframes'] if s in self._movieStems)
+
+    @staticmethod
+    def movieDims(moviePath):
+        """ Return (x, y, frames) from the movie header, or None. """
+        try:
+            if moviePath.lower().endswith('.mrc'):
+                import mrcfile
+                with mrcfile.open(moviePath, header_only=True, permissive=True) as mrc:
+                    h = mrc.header
+                    return int(h.nx), int(h.ny), int(h.nz)
+            import tifffile
+            with tifffile.TiffFile(moviePath) as tif:
+                y, x = tif.pages[0].shape[:2]
+                return x, y, len(tif.pages)
+        except Exception as e:
+            print(Color.red(f"Could not read dimensions from {moviePath}: {e}"))
+            return None
+
+    @staticmethod
+    def parseMdoc(mdocFn):
+        """ Parse an mdoc file and extract the tilt-series acquisition info. """
+        try:
+            mdoc = Mdoc.parse(mdocFn)
+        except Exception as e:
+            print(Color.red(f"Could not parse {mdocFn}: {e}"))
+            return None
+
+        g = mdoc['global']
+        zsections = [s for _, s in mdoc.zsections()]
+
+        def _float(value):
+            try:
+                return float(str(value).split()[0])
+            except (ValueError, IndexError):
+                return None
+
+        def _first(key):
+            for s in [g] + zsections:
+                if key in s:
+                    return s[key]
+            return None
+
+        # Tilt axis is usually in a title section: [T = Tilt axis angle = -93.5, ...]
+        tiltAxis = None
+        for k, s in mdoc.items():
+            for text in [k] + [f"{kk} = {vv}" for kk, vv in s.items()]:
+                if m := TomoFiles.TILT_AXIS_REGEX.search(text):
+                    tiltAxis = float(m.group(1))
+                    break
+            if tiltAxis is not None:
+                break
+        if tiltAxis is None:  # Some mdocs (e.g. Tomo5) store it as a key
+            tiltAxis = _float(_first('TiltAxisAngle'))
+
+        # Dose per tilt: ExposureDose, or from FrameDosesAndNumber,
+        # or from the increments of PriorRecordDose
+        doses = []
+        for s in zsections:
+            dose = _float(s.get('ExposureDose'))
+            if not dose and 'FrameDosesAndNumber' in s:
+                parts = s['FrameDosesAndNumber'].split()
+                dose = sum(float(d) * float(n) for d, n in zip(parts[::2], parts[1::2]))
+            doses.append(dose or 0)
+        if not any(doses):
+            prior = sorted(v for v in (_float(s.get('PriorRecordDose')) for s in zsections)
+                           if v is not None)
+            doses = [b - a for a, b in zip(prior, prior[1:]) if b > a]
+
+        angles = [a for a in (_float(s.get('TiltAngle')) for s in zsections) if a is not None]
+        imageSize = _first('ImageSize')
+        subframes = [os.path.splitext(Mdoc.getSubFrameBase(s))[0]
+                     for s in zsections if s.get('SubFramePath')]
+        return {
+            'path': mdocFn,
+            'name': os.path.basename(mdocFn),
+            'tilts': len(zsections),
+            'pixelSize': _float(_first('PixelSpacing')),
+            'dose': np.mean(doses) if any(doses) else None,
+            'tiltAxis': tiltAxis,
+            'imageSize': tuple(imageSize.split()) if imageSize else None,
+            'angles': angles,
+            'subframes': subframes,
+        }
 
 
 class TextFile:
@@ -296,3 +521,279 @@ class TextFile:
                 if line and not line.startswith('#'):
                     yield line
 
+
+class WarpXml:
+    """ Helper class to read Warp's XML files. """
+    def __init__(self, xmlPath):
+        with open(xmlPath) as f:
+            self._data = xmltodict.parse(f.read())
+        # Root element name, e.g. 'Movie' or 'TiltSeries'
+        self.root = next(iter(self._data))
+
+    def _get(self, *keys):
+        d = self._data
+        for k in keys:
+            d = d[k]
+        return d
+
+    def getDict(self, *keys):
+        """ Navigate the provided keys and get a dict from Name=Value pairs.
+        """
+        return {e['@Name']: e['@Value'] for e in self._get(*keys)}
+
+    def getAttributes(self, *keys):
+        """ Return the attributes of the element at the provided keys
+        (the root element if no keys are given) as a dict. """
+        d = self._get(*(keys or (self.root,)))
+        return {k[1:]: v for k, v in d.items() if k.startswith('@')}
+
+    def getValues(self, *keys):
+        """ Return the whitespace-separated values in the text of the
+        element at the provided keys, e.g. ('TiltSeries', 'UseTilt'). """
+        d = self._get(*keys)
+        text = d.get('#text', '') if isinstance(d, dict) else d
+        return (text or '').split()
+
+    def isSelected(self):
+        """ Return False if the item (movie or tilt series) is deselected in
+        Warp, either manually or by Warp filters. UnselectManual, when set,
+        overrides UnselectFilter. """
+        attrs = self.getAttributes()
+        manual = attrs.get('UnselectManual') or 'null'
+        if manual != 'null':
+            return manual != 'True'
+        return attrs.get('UnselectFilter', 'False') != 'True'
+
+    def get(self, *keys, default=None):
+        """ Navigate the provided keys, '@Name' keys being attributes, and
+        return the value found or default if any key is missing. """
+        d = self._data
+        for k in keys:
+            if not isinstance(d, dict) or k not in d:
+                return default
+            d = d[k]
+        return d
+
+    def getGrid(self, *keys):
+        """ Values of a Warp CubicGrid element as an array (Depth, Height, Width). """
+        grid = self.get(*keys)
+        if not isinstance(grid, dict):
+            raise KeyError(f"No CubicGrid at {'/'.join(keys)}")
+        shape = [int(grid[f'@{k}']) for k in ('Depth', 'Height', 'Width')]
+        values = np.zeros(shape)
+        nodes = grid['Node']
+        for n in nodes if isinstance(nodes, list) else [nodes]:
+            values[int(n['@Z']), int(n['@Y']), int(n['@X'])] = float(n['@Value'])
+        return values
+
+    def getMovieMotion(self):
+        """ Accumulated motion of a movie's global trajectory (Å, the units
+        of Warp's movement grids): the length of the path through the
+        frames.
+
+        Warp stores only the trajectory, GridMovementX/Y: a spline whose
+        control points (Depth) are spread over the frames.  It reports no
+        accumulated motion, and early and late motion (RELION's split at
+        4 e/Å² within the movie) do not apply to tilt movies, which take
+        less dose than that.
+        """
+        params = self.getDict('Movie', 'OptionsMovement', 'Param')
+        nFrames = int(float(params['Dimensions'].split(',')[2]))
+        xs = self.getGrid('Movie', 'GridMovementX').mean(axis=(1, 2))
+        ys = self.getGrid('Movie', 'GridMovementY').mean(axis=(1, 2))
+        if len(xs) != nFrames:
+            t, tNodes = np.linspace(0, 1, nFrames), np.linspace(0, 1, len(xs))
+            xs, ys = np.interp(t, tNodes, xs), np.interp(t, tNodes, ys)
+        return float(np.hypot(np.diff(xs), np.diff(ys)).sum())
+
+
+class WarpSpecies(dict):
+    """ Helper class to read Warp's .species files. """
+    def __init__(self, speciesFile):
+        with open(speciesFile) as f:
+            xmlDict = xmltodict.parse(f.read())
+            self._data = xmlDict['Species']
+            for item in self._data['Param']:
+                self[item['@Name']] = item['@Value']
+
+class WarpPopulation:
+    """ Helper class to read Warp's .population files. """
+    def __init__(self, populationFile):
+        self._filepath = populationFile
+        with open(populationFile) as f:
+            xmlDict = xmltodict.parse(f.read())
+            self._data = xmlDict['Population']
+            self.Name = self._data['Param']['@Value']
+            self.LastRefinementOptions = {e['@Name']: e['@Value'] for e in self._data['LastRefinementOptions']['Param']}
+            self.Sources = self._parseList(self._data.get('Sources'), 'Source')
+            self.Species = self._parseList(self._data.get('Species'), 'Species')
+
+    def __repr__(self):
+        r = f"Population: {self.Name}\n"
+        r += f"   {Color.bold('Last Refinement Options:')}\n"
+        for k, v in self.LastRefinementOptions.items():
+            r += f"      {k:<30}:  {v:<}\n"
+        r += f"   {Color.green('Species:')}\n"
+        for s in self.Species:
+            r += f"      {s['name']:<30}:  {s['path']:<}\n"
+        r += f"   {Color.cyan('Sources:')}\n"
+        for s in self.Sources:
+            r += f"      {s['name']:<30}:  {s['path']:<}\n"
+        return r
+
+    def _parseList(self, data, key):
+        if not data:
+            return []
+
+        suffix = f".{key.lower()}"
+
+        def _parseItem(item):
+            p = item['@Path']
+            name = os.path.basename(p).replace(suffix, '')
+            return {'id': item['@GUID'], 'path': p, 'name': name}
+
+        d = data.get(key) if isinstance(data, dict) else None
+        if not d:
+            return []
+
+        if isinstance(d, list):
+            return [_parseItem(item) for item in d]
+        return [_parseItem(d)]
+
+    def digest(self):
+        """ Content digest of this population and the species it points to.
+
+        Refinements rewrite the species files while leaving the .population
+        file itself untouched, so both are needed to tell two states apart.
+        """
+        md5 = hashlib.md5()
+        folder = os.path.dirname(self._filepath)
+        entries = [('', self._filepath)]
+        entries += [(s['path'], os.path.join(folder, s['path']))
+                    for s in self.Species]
+
+        for relpath, path in entries:
+            md5.update(relpath.encode())
+            if os.path.isfile(path):
+                with open(path, 'rb') as f:
+                    md5.update(f.read())
+
+        return md5.hexdigest()
+
+    def getSource(self, nameOrIndex):
+        entry = None
+        if isinstance(nameOrIndex, int):
+            entry = self.Sources[nameOrIndex]
+        else:
+            for s in self.Sources:
+                if s['name'] == nameOrIndex:
+                    entry = s
+                    break
+
+        if not entry:
+            raise Exception(f"Source {nameOrIndex} not found")
+
+        folder = os.path.dirname(self._filepath)
+        source_file = os.path.join(folder, entry['path'])
+        if not os.path.isfile(source_file):
+            raise Exception(f"Source file not found: {source_file}")
+
+        return source_file
+
+    def getSpecies(self, nameOrIndex):
+        entry = None
+        if isinstance(nameOrIndex, int):
+            entry = self.Species[nameOrIndex]
+        else:
+            for s in self.Species:
+                if s['name'] == nameOrIndex:
+                    entry = s
+                    break
+
+        if not entry:
+            raise Exception(f"Species {nameOrIndex} not found")
+
+        folder = os.path.dirname(self._filepath)
+        species_file = os.path.join(folder, entry['path'])
+        if not os.path.isfile(species_file):
+            raise Exception(f"Species file not found: {species_file}")
+
+        return WarpSpecies(species_file)
+
+
+class Acquisition(dict):
+    """ Subclass from dict with some utilities related to Acquisition. """
+
+    @property
+    def pixel_size(self):
+        return float(self['pixel_size'])
+
+    @pixel_size.setter
+    def pixel_size(self, value):
+        self['pixel_size'] = float(value)
+
+    @property
+    def voltage(self):
+        return float(self['voltage'])
+
+    @voltage.setter
+    def voltage(self, value):
+        self['voltage'] = float(value)
+
+    @property
+    def cs(self):
+        return float(self['cs'])
+
+    @cs.setter
+    def cs(self, value):
+        self['cs'] = float(value)
+
+    @property
+    def amplitude_contrast(self):
+        return float(self.get('amplitude_contrast', 0.1))
+
+    @amplitude_contrast.setter
+    def amplitude_contrast(self, value):
+        self['amplitude_contrast'] = float(value)
+
+    @property
+    def dose(self):
+        return float(self.get('dose', 0.0))
+
+    @dose.setter
+    def dose(self, value):
+        self['dose'] = float(value)
+
+    @property
+    def total_dose(self):
+        return float(self.get('total_dose', 0.0))
+
+    @total_dose.setter
+    def total_dose(self, value):
+        self['total_dose'] = float(value)
+
+
+class Imod:
+    @staticmethod
+    def get_angles_from_tlt(tltFile):
+        """ Read AreTomo3/IMOD file with tilt angles.
+
+        Expected file:
+            TS_NAME_Imod/TS_NAME_st.tlt
+        Returns:
+            list[float]: list of tilt angles (as floats) in the same order as in the input file.
+        """
+        return [float(line) for line in TextFile.stripLines(tltFile)]
+
+    @staticmethod
+    def get_alignment_from_xf(xfFile):
+        """ Read IMOD XF transformation matrices from .xf file.
+
+        Expected file:
+            TS_NAME_Imod/TS_NAME_st.xf
+        Each row contains:
+            A11 A12 A21 A22 DX DY
+        Returns:
+            list[list[float]]
+        """
+        return [list(map(float, line.split())) for line in TextFile.stripLines(xfFile)]

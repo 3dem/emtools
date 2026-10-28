@@ -1,0 +1,57 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "emtools"
+dynamic = ["version", "dependencies"]
+description = "Utilities for CryoEM data manipulation"
+readme = {file = "README.rst", content-type = "text/x-rst"}
+requires-python = ">=3.8"
+authors = [
+    {name = "J.M. De la Rosa Trevin", email = "delarosatrevin@gmail.com"},
+    {name = "Grigory Sharov", email = "gsharov@mrc-lmb.cam.ac.uk"},
+]
+keywords = ["electron-microscopy", "cryo-em", "structural-biology", "image-processing"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.15",
+]
+
+[project.urls]
+Homepage = "https://github.com/3dem/emtools"
+"Bug Reports" = "https://github.com/3dem/emtools/issues"
+Source = "https://github.com/3dem/emtools"
+
+[project.scripts]
+emt-ps = "emtools.scripts.emt_ps:main"
+emt-sysinfo = "emtools.scripts.emt_sysinfo:main"
+emt-files = "emtools.scripts.emt_files:main"
+emt-epu = "emtools.scripts.emt_epu:main"
+emt-beamshifts = "emtools.scripts.emt_beamshifts:main"
+emt-angdist = "emtools.scripts.emt_angdist:main"
+emt-star = "emtools.scripts.emt_star:main"
+emt-image = "emtools.image.__main__:main"
+
+[tool.setuptools]
+include-package-data = true
+script-files = ["emtools/scripts/emt-scipion-otf.py"]
+
+[tool.setuptools.packages.find]
+include = ["emtools*"]
+namespaces = false
+
+[tool.setuptools.dynamic]
+version = {attr = "emtools.__version__"}
+# Dependencies are intentionally not pinned (emtools supports Python >= 3.8)
+dependencies = {file = ["requirements.txt"]}
