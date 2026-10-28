@@ -421,6 +421,49 @@ TS_02            3
 
         os.unlink(ftmp.name)
 
+    def test_scan_chunks(self):
+        """ Table names and sizes are found scanning the file in chunks,
+        the same as reading it line by line (input without a binary
+        buffer), with tables split between chunks. """
+        cases = {
+            'no_last_newline': ('data_a\n\nloop_\n_x #1\n_y #2\n1 2\n3 4\n\n'
+                                'data_b\n\n_z 5\n\ndata_c\nloop_\n_x\n1\n2\n3',
+                                {'a': 2, 'b': 1, 'c': 3}),
+            'spaces_line': ('data_a\nloop_\n_x\n1\n2\n   \t\n3\n', {'a': 2}),
+            'crlf': ('data_a\r\nloop_\r\n_x\r\n1\r\n2\r\n\r\n'
+                     'data_b\r\nloop_\r\n_y\r\n7\r\n', {'a': 2, 'b': 1}),
+            'empty_table': ('data_a\nloop_\n_x\n\ndata_b\nloop_\n_y\n1\n2\n  ',
+                            {'a': 0, 'b': 2}),
+            'quotes': ('data_a\nloop_\n_x\n"a b" 1\n2\n', {'a': 2}),
+        }
+        chunkSize = StarFile.SCAN_CHUNK_SIZE
+        try:
+            for name, (content, sizes) in cases.items():
+                with tempfile.TemporaryDirectory() as tmp:
+                    fn = os.path.join(tmp, f'{name}.star')
+                    with open(fn, 'w', newline='') as f:
+                        f.write(content)
+                    with open(fn) as f:  # Line by line
+                        with StarFile(f, closeFile=False) as sf:
+                            sf._binaryFile = lambda: None
+                            expected = (sf.getTableNames(), dict(sf._offsets),
+                                        {t: sf.getTableSize(t) for t in sizes})
+                    self.assertEqual(expected[2], sizes, name)
+                    for size in (1, 5, 64, 1024):
+                        StarFile.SCAN_CHUNK_SIZE = size
+                        with StarFile(fn) as sf:
+                            result = (sf.getTableNames(), dict(sf._offsets),
+                                      {t: sf.getTableSize(t) for t in sizes})
+                            # Tables can be read after counting
+                            for t, n in sizes.items():
+                                self.assertEqual(len(sf.getTable(t) or []), n)
+                        self.assertEqual(result, expected, f'{name}, chunk {size}')
+                        with StarFile(fn) as sf:  # Without the names
+                            self.assertEqual(
+                                {t: sf.getTableSize(t) for t in sizes}, sizes)
+        finally:
+            StarFile.SCAN_CHUNK_SIZE = chunkSize
+
 
 class TestTable(unittest.TestCase):
     """Tests for Table.update and Table.filter."""

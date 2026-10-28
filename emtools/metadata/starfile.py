@@ -86,9 +86,54 @@ class StarFile(AbstractContextManager):
         """ Return if a table name is in the file. """
         return item in self.getTableNames()
 
+    # Big files are scanned in chunks of this size (bytes), see _binaryFile
+    SCAN_CHUNK_SIZE = 16 * 1024 * 1024
+    # The empty line (only spaces) after the rows of a table
+    _EMPTY_LINE = re.compile(rb'\n[ \t\r\f\v]*\n')
+    _EMPTY_LAST_LINE = re.compile(rb'\n[ \t\r\f\v]*(?:\n|\Z)')
+
+    def _binaryFile(self):
+        """ Return the binary buffer of the file, to scan it in big chunks
+        (much faster than reading line by line), or None if not possible
+        (e.g. the input was a file object without it). """
+        buffer = getattr(self._file, 'buffer', None)
+        if buffer is None or not buffer.seekable() or not buffer.readable():
+            return None
+        return buffer
+
+    def _scanTableNames(self, fb):
+        """ Find the data_ lines, with their offsets, in chunks of the file. """
+        fb.seek(0)
+        offset = 0  # File offset of the start of buf
+        carry = b''
+        while True:
+            chunk = fb.read(self.SCAN_CHUNK_SIZE)
+            buf = carry + chunk
+            # Only complete lines, the last one might continue in the next chunk
+            end = len(buf) if not chunk else buf.rfind(b'\n') + 1
+            # Starts of the data_ lines (buf always starts with a line)
+            starts = [0] if end and buf.startswith(b'data_') else []
+            i = buf.find(b'\ndata_', 0, end)
+            while i >= 0:
+                starts.append(i + 1)
+                i = buf.find(b'\ndata_', i + 1, end)
+            for start in starts:
+                lineEnd = buf.find(b'\n', start, end)
+                ds = buf[start:end if lineEnd < 0 else lineEnd].decode().strip()
+                self._offsets[ds] = offset + start
+                self._names.append(ds.replace('data_', '', 1))
+            if not chunk:
+                break
+            carry = buf[end:]
+            offset += end
+        # Text reading continues from the beginning
+        self._file.seek(0)
+
     def getTableNames(self):
         r""" Return all the names of the *data\_* blocks found in the file. """
-        if not self._names:  # Scan for ALL table names
+        if not self._names and (fb := self._binaryFile()) is not None:
+            self._scanTableNames(fb)
+        elif not self._names:  # Scan for ALL table names
             f = self._file  # shortcut notation
             f.seek(0)  # move file pointer to the beginning
             offset = 0
@@ -168,8 +213,44 @@ class StarFile(AbstractContextManager):
         self._loadTableInfo(tableName)
         if self._singleRow:
             return 1
-        else:
+        elif not self._line or (fb := self._binaryFile()) is None:
             return sum(1 for line in self._iterRowLines())
+        else:
+            return self._countRowLines(fb)
+
+    def _countRowLines(self, fb):
+        """ Count the rows of the current table, like _iterRowLines (until
+        an empty line or the end of the file), but counting the lines of the
+        file in chunks instead of reading them. The first row line was
+        already read (self._line). """
+        start = self._file.tell()
+        fb.seek(start)
+        count = 1
+        # Each row line is counted by the newline before it, the first one
+        # is the newline of the first row (file offset start - 1)
+        carry = b'\n'
+        offset = start - 1  # File offset of the start of buf
+        while True:
+            chunk = fb.read(self.SCAN_CHUNK_SIZE)
+            buf = carry + chunk
+            # The last line in the file might be empty without a newline
+            emptyLine = self._EMPTY_LINE if chunk else self._EMPTY_LAST_LINE
+            if m := emptyLine.search(buf):
+                count += buf.count(b'\n', 0, m.start())
+                end = offset + m.start() + 1  # Start of the empty line
+                break
+            if not chunk:
+                count += buf.count(b'\n')
+                end = offset + len(buf)
+                break
+            last = buf.rfind(b'\n')
+            count += buf.count(b'\n', 0, last)
+            carry = buf[last:]
+            offset += last
+        # As after _iterRowLines, no more rows, text reading continues after them
+        self._line = ''
+        self._file.seek(end)
+        return count
 
     def getTableInfo(self, tableName, **kwargs):
         """ Similar to getTable(), but it will not parse the data rows.
@@ -1122,6 +1203,14 @@ class RelionStar:
         }
 
     @staticmethod
+    def isNodeTypeLabel(label):
+        """ Return True if the label is a Relion node type label,
+        e.g. 'DensityMap.mrc' or 'ProcessData.star.relion.optimiser',
+        and not one of our inferred datatypes (e.g. Volume, TomoParticles).
+        """
+        return bool(label) and '.' in label
+
+    @staticmethod
     def write_pipeline(pipeline_star, jobCounter=1, tables=None):
         version = RelionStar.PIPELINE_VERSION
         with StarFile(pipeline_star, 'w') as sf:
@@ -1183,7 +1272,12 @@ class RelionStar:
                 for row in tOutput:
                     job = wf.getJob(Path.rmslash(row.rlnPipeLineEdgeProcess))
                     nodeName = row.rlnPipeLineEdgeToNode
-                    job.registerOutput(nodeName, datatype=nodes.get(nodeName, 'File'))
+                    label = nodes.get(nodeName, 'File')
+                    kwargs = {'datatype': label}
+                    # Keep Relion's node type to write it back unchanged
+                    if RelionStar.isNodeTypeLabel(label):
+                        kwargs['nodetype'] = label
+                    job.registerOutput(nodeName, **kwargs)
 
             if tInput := _table('input_edges'):
                 for row in tInput:
@@ -1225,9 +1319,10 @@ class RelionStar:
                 )
 
             for o in job.outputs:
+                # Relion's node type if known, otherwise our inferred datatype
                 tNodes.addRowValues(
                     rlnPipeLineNodeName=o.id,
-                    rlnPipeLineNodeTypeLabel=o.get('datatype', 'File'),
+                    rlnPipeLineNodeTypeLabel=o.get('nodetype') or o.get('datatype', 'File'),
                     rlnPipeLineNodeTypeLabelDepth=1
                 )
                 tOutput.addRowValues(
