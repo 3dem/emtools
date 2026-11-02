@@ -439,6 +439,9 @@ class Image:
         if new_shape == shape:
             return np.array(image, copy=True)
 
+        if not np.iscomplexobj(image):
+            return Image._fourier_rescale_real(image, new_shape)
+
         spectrum = np.fft.fftshift(np.fft.fftn(image))
         resized = np.zeros(new_shape, dtype=spectrum.dtype)
 
@@ -455,6 +458,42 @@ class Image:
         # Preserve average intensity when changing the number of pixels.
         amp = np.prod(new_shape) / np.prod(shape)
         result = np.real(np.fft.ifftn(np.fft.ifftshift(resized * amp)))
+
+        if np.issubdtype(image.dtype, np.floating):
+            return result.astype(image.dtype, copy=False)
+        return result
+
+    @staticmethod
+    def _fourier_rescale_real(image, new_shape):
+        """ _fourier_rescale of a real image with the half spectrum (rfftn),
+        which needs about half the memory and time (e.g. for big maps). """
+        shape = image.shape
+        spectrum = np.fft.rfftn(image)
+        # All axes but the last one are full: crop/pad them DC-centered
+        axes = tuple(range(image.ndim - 1))
+        spectrum = np.fft.fftshift(spectrum, axes=axes)
+        half_shape = tuple(new_shape[:-1]) + (new_shape[-1] // 2 + 1,)
+        resized = np.zeros(half_shape, dtype=spectrum.dtype)
+
+        src_slices = []
+        dst_slices = []
+        for in_size, out_size in zip(shape[:-1], new_shape[:-1]):
+            src_start, dst_start, length = Image._fourier_axis_slices(
+                in_size, out_size)
+            src_slices.append(slice(src_start, src_start + length))
+            dst_slices.append(slice(dst_start, dst_start + length))
+        # The last axis has the non-negative frequencies only
+        length = min(shape[-1] // 2, new_shape[-1] // 2) + 1
+        src_slices.append(slice(0, length))
+        dst_slices.append(slice(0, length))
+
+        resized[tuple(dst_slices)] = spectrum[tuple(src_slices)]
+        del spectrum
+        resized = np.fft.ifftshift(resized, axes=axes)
+
+        # Preserve average intensity when changing the number of pixels.
+        amp = np.prod(new_shape) / np.prod(shape)
+        result = np.fft.irfftn(resized, s=new_shape) * amp
 
         if np.issubdtype(image.dtype, np.floating):
             return result.astype(image.dtype, copy=False)
