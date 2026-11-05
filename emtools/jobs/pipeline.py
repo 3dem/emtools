@@ -16,6 +16,7 @@
 
 from collections import OrderedDict
 import threading
+import traceback
 
 
 class Pipeline:
@@ -54,6 +55,12 @@ class Pipeline:
 
         for n in self._nodes.values():
             n.join()
+
+        # Errors that crashed a node (its thread), the other nodes finished
+        # (see TaskGenerator.run) but the pipeline did not run completely
+        if errors := [f"{n.name}: {n.error}" for n in self._nodes.values()
+                      if n.error]:
+            raise Exception("Pipeline nodes failed:\n" + "\n".join(errors))
 
 
 class TaskQueue:
@@ -143,6 +150,7 @@ class TaskGenerator(threading.Thread):
         """
         threading.Thread.__init__(self)
         self.id = None
+        self.error = None  # Exception that stopped this node, if any
         self.name = name
         self.debug = debug
         self._generator = generator
@@ -156,13 +164,17 @@ class TaskGenerator(threading.Thread):
         self.outputQueue.notifyGeneratorStarts()
         self.id = threading.get_ident()
 
-        # self._print(">>>>>> Iterating generator tasks")
-        for task in self._generator():
-            # self._print(">>>>>>>> Got task: ", task['id'], "...putting it queue.")
-            self.outputQueue.putTask(task, self)
-            # self._print(">>>>>>>> SENT task: ", task['id'])
-
-        self.outputQueue.notifyGeneratorEnds()
+        # Always notify the end, even if the generator/processor fails,
+        # otherwise the nodes consuming its output would wait forever
+        try:
+            for task in self._generator():
+                self.outputQueue.putTask(task, self)
+        except Exception:
+            self.error = traceback.format_exc()
+            print(f">>> ERROR in pipeline node '{self.name}':\n{self.error}",
+                  flush=True)
+        finally:
+            self.outputQueue.notifyGeneratorEnds()
 
     def _print(self, *args):
         """ Function to debug printing Generator's name. """

@@ -591,6 +591,11 @@ class StarMonitor:
         if blacklist:
             for row in blacklist:
                 self._seenItems.add(self._rowKeyFunc(row))
+        # Without previous items, wait (without timeout) until the first
+        # new items arrive. With previous items (e.g. continuing a job), the
+        # timeout starts from the first check, otherwise the monitor would
+        # never end when there are no new items
+        self._hasPreviousItems = bool(self._seenItems)
 
     def _readTable(self):
         """ Read the table rows as (key, row) pairs. """
@@ -639,7 +644,7 @@ class StarMonitor:
                         raise
 
             self.lastCheck = now
-            if newRows:
+            if newRows or (self.lastUpdate is None and self._hasPreviousItems):
                 self.lastUpdate = now
 
         return newRows
