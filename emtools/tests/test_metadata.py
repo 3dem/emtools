@@ -52,6 +52,24 @@ class TestStarFile(unittest.TestCase):
         for colName, col in zip(columnNames, table.getColumns()):
             self.assertEqual(colName, col.getName())
 
+    def test_empty_table(self):
+        """ A data block without columns (e.g. 'data_global' written for an
+        empty table) has no rows and does not take the next table columns. """
+        with tempfile.TemporaryDirectory() as tmp:
+            fn = os.path.join(tmp, 'empty.star')
+            with open(fn, 'w') as f:
+                f.write("\ndata_global\n\ndata_TS_01\n\nloop_\n"
+                        "_rlnA #1\n_rlnB #2\n1 2\n3 4\n")
+            t = StarFile.getTableFromFile('global', fn)
+            self.assertEqual(t.getColumnNames(), [])
+            self.assertEqual(len(t), 0)
+            with StarFile(fn) as sf:
+                self.assertEqual(sf.getTableSize('global'), 0)
+                self.assertEqual(sf.getTableSize('TS_01'), 2)
+            t = StarFile.getTableFromFile('TS_01', fn)
+            self.assertEqual(t.getColumnNames(), ['rlnA', 'rlnB'])
+            self.assertEqual(len(t), 2)
+
     def test_read_movieStar(self):
         """
         Read a star file with several blocks

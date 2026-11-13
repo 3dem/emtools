@@ -316,7 +316,9 @@ class StarFile(AbstractContextManager):
                 values.append(parts[1])
             self._line = self._file.readline().strip()
 
-        self._singleRow = not self._foundLoop
+        # A data block without columns (e.g. an empty 'data_global' written
+        # for a table without rows) has no rows, not a single empty one
+        self._singleRow = not self._foundLoop and bool(colNames)
 
         if self._foundLoop:
             values = self.__split_line(self._line)
@@ -401,6 +403,9 @@ class StarFile(AbstractContextManager):
                 break
             elif rawLine.startswith('loop_'):
                 foundLoop = True
+            elif rawLine.startswith('data_'):
+                # Next table, the current one has no columns
+                break
             rawLine = self._file.readline()
 
         self._line = line.strip()
