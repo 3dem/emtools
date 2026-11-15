@@ -16,6 +16,7 @@
 
 from doctest import OutputChecker
 import io
+import os
 import numpy as np
 import base64
 import mrcfile
@@ -368,8 +369,21 @@ class Image:
     def get_dimensions(imagePath):
         imageLower = imagePath.lower()
         if imageLower.endswith('.mrc') or imageLower.endswith('.mrcs'):
-            with mrcfile.open(imagePath) as mrc:
-                return mrc.data.shape[::-1]  # in reverse order
+            # Read only the header, not the (possibly large) data block
+            with mrcfile.open(imagePath, header_only=True) as mrc:
+                h = mrc.header
+                x, y, z = int(h.nx), int(h.ny), int(h.nz)
+                # Check the file size, as reading the data would do, so a
+                # truncated file is still reported as an error
+                dtype = mrcfile.utils.data_dtype_from_header(h)
+                expected = (1024 + int(h.nsymbt)  # main + extended header
+                            + x * y * z * dtype.itemsize)
+                actual = os.path.getsize(imagePath)
+                if actual < expected:
+                    raise ValueError(f"MRC file is truncated: expected "
+                                     f"{expected} bytes, found {actual}")
+                # Same as data.shape[::-1]: a single image is 2D
+                return (x, y, z) if z > 1 else (x, y)
         elif (imageLower.endswith('.tif') or
               imageLower.endswith('.tiff') or
               imageLower.endswith('.eer') or
