@@ -30,6 +30,9 @@ memory and GPUs) and the cluster job (LSF or Slurm) it runs in, if any.
 """
 
 import os
+import re
+import json
+import shlex
 import subprocess
 
 from ..utils import System
@@ -50,7 +53,11 @@ def _safe(func, default=None):
 
 
 class ClusterJob:
-    """ Cluster job (LSF or Slurm) running the current process. """
+    """ Cluster jobs (LSF or Slurm): the one running the current process
+    and commands of the queueing system run on a given job id. """
+
+    # Cluster job id as written by bsub/sbatch, also an LSF array element
+    ID_RE = re.compile(r'^\d+(\[\d+\])?$')
 
     @staticmethod
     def current():
@@ -92,6 +99,50 @@ class ClusterJob:
         values = [v.strip() for v in lines[0].split('|')] + ['', '']
         memory = {k: v for k, v in zip(['max', 'avg'], values) if v and v != '-'}
         return memory or None
+
+    @staticmethod
+    def command(template, job_id):
+        """ Command of a queue template for a cluster job id, e.g.
+        "bkill {job_id}". The id is validated, since it is formatted into
+        the command. """
+        job_id = str(job_id).strip()
+        if not ClusterJob.ID_RE.match(job_id):
+            raise Exception(f"Invalid cluster job id '{job_id}'.")
+        return template.format(job_id=job_id)
+
+    @staticmethod
+    def run(template, job_id, timeout=90):
+        """ Run the command of a queue template for a cluster job id (see
+        command), without a shell. Returns the subprocess.CompletedProcess
+        (it does not check the exit code). """
+        cmd = ClusterJob.command(template, job_id)
+        try:
+            return subprocess.run(shlex.split(cmd), capture_output=True,
+                                  text=True, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            raise Exception(f"Timeout ({timeout} s) running '{cmd}' "
+                            f"for cluster job {job_id}.")
+        except OSError as e:
+            raise Exception(f"Could not run '{cmd}': {e}")
+
+    @staticmethod
+    def inspect(template, job_id, timeout=90):
+        """ Run an 'inspect' queue command for a cluster job, e.g.
+        "$SCRIPTS/lsf_inspect_job.sh {job_id} --json". It queries the
+        queueing system, so it is meant for launched or running jobs.
+        Returns a dict with: job_id, command and either format='json' + data
+        (if the output is JSON) or format='text' + text. """
+        cmd = ClusterJob.command(template, job_id)
+        p = ClusterJob.run(template, job_id, timeout=timeout)
+        result = {'job_id': str(job_id).strip(), 'command': cmd}
+        try:
+            result.update(format='json', data=json.loads(p.stdout))
+        except ValueError:
+            text = (p.stdout or '').strip()
+            if p.returncode != 0 and p.stderr.strip():
+                text = (text + '\n' + p.stderr.strip()).strip()
+            result.update(format='text', text=text)
+        return result
 
 
 class ComputingEnv:
