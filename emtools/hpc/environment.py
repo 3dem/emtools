@@ -172,6 +172,7 @@ class ComputingEnv:
 
         return {
             'host': _safe(System.hostname),
+            'pid': os.getpid(),  # The job process (e.g. to inspect it locally)
             'node': {
                 'cpus': _safe(System.cpus),
                 'memory': _safe(System.memory),  # GiB
@@ -234,7 +235,8 @@ class ComputingEnv:
             gpus[key] = gpus.get(key, 0) + 1
         node_gpus = ', '.join(f"{n} x {name}" for name, n in gpus.items()) or 'no GPUs'
         lines = ["Computing environment",
-                 f"  Host: {info.get('host')}",
+                 f"  Host: {info.get('host')}"
+                 + (f" (pid {info['pid']})" if info.get('pid') else ''),
                  f"  Node: {node.get('cpus')} CPUs, {node.get('memory')} GiB memory, "
                  f"{node_gpus}"]
         if cluster := info.get('cluster'):
