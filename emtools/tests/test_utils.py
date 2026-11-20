@@ -54,3 +54,44 @@ class TestSystem(unittest.TestCase):
         h = System.hostname()
         print(">>> Hostname: ", h)
         self.assertTrue(bool(h))
+
+
+class TestResourceMonitor(unittest.TestCase):
+    def test_load_series(self):
+        import os
+        import tempfile
+        from emtools.utils import ResourceMonitor
+
+        with tempfile.TemporaryDirectory() as tmp:
+            csvFile = os.path.join(tmp, 'run01.csv')
+            with open(csvFile, 'w') as f:
+                f.write('time,cpu,rss_gb,read_mbs\n')
+                for i in range(10):
+                    f.write(f"{i * 2},{i * 10},{i / 10},{'' if i < 4 else 1}\n")
+            # Buckets of 4, 4 and 2 rows
+            data = ResourceMonitor.load_series(csvFile, max_points=3)
+            self.assertEqual(data['samples'], 10)
+            series = data['series']
+            self.assertEqual(series['time'], [0, 8, 16])
+            self.assertEqual(series['cpu'], [15, 55, 85])  # mean
+            self.assertEqual(series['rss_gb'], [0.3, 0.7, 0.9])  # max
+            self.assertEqual(series['read_mbs'], [None, 1, 1])
+            self.assertEqual(data['last']['time'], '18')
+
+            open(csvFile, 'w').close()
+            data = ResourceMonitor.load_series(csvFile)
+            self.assertEqual(data, {'samples': 0, 'series': {}, 'last': None})
+
+    def test_snapshot(self):
+        import os
+        import sys
+        from emtools.utils import ResourceMonitor
+
+        s = ResourceMonitor.snapshot(os.getpid(), dt=0.1)
+        self.assertEqual(s['pid'], os.getpid())
+        self.assertGreaterEqual(s['procs'], 1)
+        self.assertGreater(s['rss_gb'], 0)
+        # The command line must contain match
+        self.assertIsNone(ResourceMonitor.snapshot(os.getpid(), match='no-such-job-xyz'))
+        self.assertIsNotNone(ResourceMonitor.snapshot(os.getpid(), dt=0.1,
+                                                      match=os.path.basename(sys.argv[0])))

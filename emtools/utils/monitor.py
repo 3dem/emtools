@@ -375,6 +375,82 @@ class ResourceMonitor:
         return [c[3:-5] for c in header if c.startswith('gpu') and c.endswith('_util')]
 
     @staticmethod
+    def load_series(csvFile, max_points=400):
+        """ Columns of a monitor CSV file reduced to at most max_points
+        values, to plot long runs: buckets of consecutive rows, with the
+        first time, the max of the memory columns (*_gb) and the mean of
+        the others (None if a bucket has no values). Returns
+        {'samples': rows in the file, 'series': {column: values},
+        'last': the last row (dict of strings) or None}. """
+        with open(csvFile, newline='') as f:
+            rows = list(csv.DictReader(f))
+        n = len(rows)
+        columns = list(rows[0]) if rows else []
+        step = max(1, -(-n // max(1, int(max_points))))  # ceil
+        series = {c: [] for c in columns}
+        for b in range(0, n, step):
+            bucket = rows[b:b + step]
+            for c in columns:
+                if c == 'time':
+                    v = float(bucket[0][c]) if bucket[0].get(c) else None
+                elif values := [float(r[c]) for r in bucket
+                                if r.get(c) not in (None, '')]:
+                    v = (max(values) if c.endswith('_gb')
+                         else round(sum(values) / len(values), 2))
+                else:
+                    v = None
+                series[c].append(v)
+        return {'samples': n, 'series': series, 'last': rows[-1] if rows else None}
+
+    @staticmethod
+    def snapshot(pid, match=None, max_children=10, dt=0.5):
+        """ Live usage of a process tree (root pid), or None if it is not
+        running. If match is given, the root command line must contain it
+        (e.g. the job id), to not report another process that got the same
+        pid. CPU (% of one core) is measured over dt seconds. Returns the
+        totals of the tree (procs, cpu, rss_gb, threads), the root status
+        and uptime (s) and the max_children busiest descendants. """
+        try:
+            root = psutil.Process(int(pid))
+            if match and match not in ' '.join(root.cmdline()):
+                return None
+            procs = [root] + root.children(recursive=True)
+        except (psutil.Error, ValueError):
+            return None
+        for p in procs:
+            try:
+                p.cpu_percent(None)
+            except psutil.Error:
+                pass
+        time.sleep(dt)
+        rows = []
+        for p in procs:
+            try:
+                with p.oneshot():
+                    if p.status() == psutil.STATUS_ZOMBIE:
+                        continue
+                    rows.append({'pid': p.pid, 'name': p.name(),
+                                 'status': p.status(),
+                                 'cpu': round(p.cpu_percent(None), 1),
+                                 'rss_mb': round(p.memory_info().rss / 1024 ** 2),
+                                 'threads': p.num_threads(),
+                                 'cmdline': ' '.join(p.cmdline())[:300]})
+            except psutil.Error:
+                continue
+        if not rows:
+            return None
+        return {
+            'pid': root.pid,
+            'status': rows[0]['status'] if rows[0]['pid'] == root.pid else '',
+            'uptime': max(0, int(time.time() - root.create_time())),
+            'procs': len(rows),
+            'cpu': round(sum(r['cpu'] for r in rows), 1),
+            'rss_gb': round(sum(r['rss_mb'] for r in rows) / 1024, 2),
+            'threads': sum(r['threads'] for r in rows),
+            'children': sorted(rows[1:], key=lambda r: -r['cpu'])[:max_children],
+        }
+
+    @staticmethod
     def summary_lines(summary):
         """ Lines to log a summary from summarize(). """
         if not summary:
