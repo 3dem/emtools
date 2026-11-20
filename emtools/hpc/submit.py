@@ -1,6 +1,7 @@
 
 import os
-import imp
+import importlib.machinery
+import importlib.util
 
 from emtools.utils import Color
 
@@ -8,8 +9,10 @@ from emtools.utils import Color
 def submit_script(template_path):
     print(">>> Parsing file: ", Color.green(template_path))
 
-    #FIXME: replace implementation with imp
-    template = imp.load_source('template', template_path)
+    spec = importlib.util.spec_from_loader(
+        'template', importlib.machinery.SourceFileLoader('template', template_path))
+    template = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(template)
     print(">>> Overwriting file: ", Color.green(template_path))
     with open(template_path, 'w') as f:
         f.write(template.TEMPLATE)

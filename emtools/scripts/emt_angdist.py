@@ -162,7 +162,7 @@ class AngularDistPlot:
         fig, ax = plt.subplots()
         hb = ax.hexbin(anglesRot, anglesTilt, bins='log', cmap=colormap, gridsize=gridsize)
         ax.set(xlim=(-180, 180), ylim=(0, 180))
-        ax.set_xlabel('$\phi$ (rlnAngleRot, deg)')
+        ax.set_xlabel(r'$\phi$ (rlnAngleRot, deg)')
         ax.set_xticks(range(-180, 181, 45))
         ax.set_ylabel('$\\theta$ (rlnAngleTilt, deg)')
         ax.set_yticks(range(0, 181, 45))
