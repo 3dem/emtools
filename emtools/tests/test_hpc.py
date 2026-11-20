@@ -79,6 +79,24 @@ class TestComputingEnv(unittest.TestCase):
         self.assertEqual(lines[0], 'Computing environment')
         self.assertIn('  Job CPUs (params): 8', lines)
 
+    def test_node_indexes_cuda_order(self):
+        """ Mixed GPU models (like wkst03): CUDA puts the P100s first and
+        the Quadro (nvidia-smi index 0) last, the job GPU ids are CUDA ones. """
+        from emtools.utils import System
+        node = [{'index': '0', 'name': 'Quadro P4000', 'pci.bus_id': '00000000:18:00.0'},
+                {'index': '1', 'name': 'Tesla P100', 'pci.bus_id': '00000000:3B:00.0'},
+                {'index': '2', 'name': 'Tesla P100', 'pci.bus_id': '00000000:5E:00.0'}]
+        cuda = ['0000:3B:00.0', '0000:5E:00.0', '0000:18:00.0']
+        with unittest.mock.patch.object(System, 'cuda_bus_ids', return_value=cuda):
+            self.assertEqual(ComputingEnv._node_indexes([0, 2], node, ''), ['1', '0'])
+        # As if CUDA_VISIBLE_DEVICES=2,0: the driver only shows those two
+        with unittest.mock.patch.object(System, 'cuda_bus_ids', return_value=cuda[2:] + cuda[:1]):
+            self.assertEqual(ComputingEnv._node_indexes([1], node, '2,0'), ['1'])
+        # Without the CUDA driver: only CUDA_VISIBLE_DEVICES is applied
+        with unittest.mock.patch.object(System, 'cuda_bus_ids', return_value=None):
+            self.assertEqual(ComputingEnv._node_indexes([1], node, '2,0'), ['0'])
+            self.assertEqual(ComputingEnv._node_indexes([1], node, ''), ['1'])
+
 
 if __name__ == '__main__':
     unittest.main()

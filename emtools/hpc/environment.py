@@ -163,10 +163,7 @@ class ComputingEnv:
         gpu_ids = list(gpu_ids or [])
         node_gpus = _safe(System.gpus, []) or []
         visible = os.environ.get('CUDA_VISIBLE_DEVICES', '').strip()
-        visible_ids = [v.strip() for v in visible.split(',') if v.strip()]
-        # The job GPU ids are relative to the visible devices (if set)
-        indexes = [visible_ids[i] if i < len(visible_ids) else str(i)
-                   for i in gpu_ids]
+        indexes = ComputingEnv._node_indexes(gpu_ids, node_gpus, visible)
         gpu_names = {g.get('name') for g in node_gpus if g.get('index') in indexes}
         if gpu_ids and not gpu_names:
             # Not mapped (e.g. GPU UUIDs), it is clear if all are the same type
@@ -184,10 +181,48 @@ class ComputingEnv:
             'cpus': cpus,
             'gpus': len(gpu_ids),
             'gpu_ids': gpu_ids,
+            # nvidia-smi indexes of the job GPUs (None if not known)
+            'gpu_node_ids': [i for i in indexes if i is not None] or None,
             'gpu_type': ', '.join(sorted(n for n in gpu_names if n)) or None,
             'cuda_visible_devices': visible or None,
             'cluster': ClusterJob.current()
         }
+
+    @staticmethod
+    def _node_indexes(gpu_ids, node_gpus, visible):
+        """ nvidia-smi indexes (str) of the job GPU ids, which are CUDA
+        device ids: relative to CUDA_VISIBLE_DEVICES and in CUDA order, not
+        the nvidia-smi one with different GPU models in the node. Mapped
+        with the PCI bus ids from the CUDA driver, asked in a child process
+        so that it is not loaded in the job one. Without it, the CUDA order
+        is taken as the nvidia-smi one and only CUDA_VISIBLE_DEVICES is
+        applied (its values might be UUIDs, not indexes). """
+        if not gpu_ids:
+            return []
+        busIds = _safe(lambda: System.cuda_bus_ids(isolated=True)) if node_gpus else None
+        if busIds:
+            byBus = {System.bus_id_key(g['pci.bus_id']): g.get('index')
+                     for g in node_gpus if g.get('pci.bus_id')}
+            return [byBus.get(System.bus_id_key(busIds[i])) if i < len(busIds) else None
+                    for i in gpu_ids]
+        visible_ids = [v.strip() for v in visible.split(',') if v.strip()]
+        return [visible_ids[i] if i < len(visible_ids) else str(i)
+                for i in gpu_ids]
+
+    @staticmethod
+    def monitor_gpus(info):
+        """ GPUs to monitor for the job of a computing environment dict (see
+        collect), as the job sees them (CUDA device ids): its GPU ids or,
+        without them, 'all' the visible ones (e.g. Relion jobs with empty
+        gpu_ids use all of them), but in a cluster only if
+        CUDA_VISIBLE_DEVICES limits them to the job ones. [] for none. """
+        if gpu_ids := info.get('gpu_ids'):
+            return [int(i) for i in gpu_ids]
+        if not (info.get('node') or {}).get('gpus'):
+            return []  # No GPUs in the node (or no nvidia-smi)
+        if info.get('cuda_visible_devices') or not info.get('cluster'):
+            return 'all'
+        return []
 
     @staticmethod
     def lines(info):
@@ -211,8 +246,10 @@ class ComputingEnv:
         lines.append(f"  Job CPUs (params): {info.get('cpus')}")
         gpu_line = f"  Job GPUs: {info.get('gpus')}"
         if info.get('gpus'):
-            gpu_line += (f", ids: {' '.join(str(i) for i in info['gpu_ids'])}"
-                         f", type: {info.get('gpu_type')}")
+            gpu_line += f", ids: {' '.join(str(i) for i in info['gpu_ids'])}"
+            if node_ids := info.get('gpu_node_ids'):
+                gpu_line += f" (node GPUs {' '.join(node_ids)})"
+            gpu_line += f", type: {info.get('gpu_type')}"
         if visible := info.get('cuda_visible_devices'):
             gpu_line += f", CUDA_VISIBLE_DEVICES={visible}"
         lines.append(gpu_line)
